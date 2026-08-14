@@ -8,5 +8,11 @@ version = "0.1.0"
 requires-python = ">=3.10, <3.13"
 dynamic = ["dependencies"]
 
+[tool.setuptools]
+# This repository intentionally provides standalone scripts, not an importable
+# Python package. Prevent setuptools from treating Colab data directories as
+# distributable packages during `uv sync`.
+py-modules = []
+
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }

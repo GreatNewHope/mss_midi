@@ -105,7 +105,8 @@ make prepare PACKAGE_MANAGER=pip PYTHON=python
 
 The supplied notebook uses this command and points UNMIXX at
 `/content/third_party/unmixx`. A Colab GPU runtime is required for practical
-performance.
+performance. Every `make run-*` target runs `prepare` itself, so include
+`PACKAGE_MANAGER=pip PYTHON=python` on each Colab `make run-*` command too.
 
 ## 3. Music-Source-Separation-Training
 
