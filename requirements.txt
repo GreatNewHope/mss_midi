@@ -1,0 +1,9 @@
+# Dependencies used directly by this repository's scripts.
+#
+# `make prepare` installs the upstream requirements from the current default
+# branches of UNMIXX and Music-Source-Separation-Training separately.
+huggingface-hub
+melband-roformer-infer
+PyYAML
+torch
+torchaudio

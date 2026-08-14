@@ -1,0 +1,381 @@
+# Modular vocal separation for pop and musical theatre
+
+This project is now optimized for a very specific case that works well in practice:
+
+- a normal mastered pop / musical-theatre song,
+- instruments underneath the vocals,
+- a backing choir or backing-vocal ensemble,
+- **two foreground singers singing simultaneously**, often in harmony.
+
+The pipeline is deliberately hierarchical:
+
+```text
+320 kb/s MP3 / normal music file
+        |
+        v
+[Stage 1: Mel-Band RoFormer]
+        |
+        `---- ALL VOCALS
+                 |
+                 v
+[Stage 2: MVSep Mega 53 / BS-RoFormer]
+                 |
+          +------+----------------+
+          |                       |
+          v                       v
+   lead-vocal mixture          back-vocal
+   (two principals)          (choir/backing)
+          |
+          v
+[Stage 3: UNMIXX]
+          |
+     +----+----+
+     |         |
+     v         v
+ singer_01   singer_02
+```
+
+This matches the observed musical-theatre case much better than trying to use one model to produce every singer directly.
+
+## Why UNMIXX is the new Stage 3
+
+UNMIXX is specifically a **multiple singing voices separation** model. The published checkpoint/config is a two-source model (`num_sources: 2`, `n_src: 2`) at **24 kHz**, and the training configuration includes same-song, same-singer and unison mixtures. That is much closer to two actors singing harmonies than a generic speech separator.
+
+The official repository contains:
+
+```text
+inference.py
+ckpt/conf.yml
+ckpt/best.ckpt
+```
+
+The project uses the official UNMIXX model/checkpoint but runs it through the bundled `unmixx_chunked_inference.py` helper. The upstream `inference.py` forwards the entire WAV in one call, which can exhaust GPU memory on full songs. The helper loads the model once, runs short overlapping windows, aligns the two output permutations between neighbouring chunks, and overlap-adds them into full-length stems.
+
+## Important interpretation of Stage 2
+
+For this pipeline we assume Mega53 behaves like it did on the successful test song:
+
+```text
+lead-vocal -> the two foreground/principal singers
+back-vocal -> choir / ensemble backing vocals
+```
+
+That is a production-role classification, not a guarantee of physical singer identity. On another mix, an ad-lib or one foreground singer may occasionally leak into `back-vocal`, or a loud backing singer may leak into `lead-vocal`.
+
+Always keep the intermediate stems so you can diagnose which stage caused an error.
+
+# Installation
+
+A CUDA-capable NVIDIA GPU is strongly recommended. Mega53 is particularly memory-intensive; its upstream release recommends around 16 GB VRAM or more.
+
+## 1. ffmpeg
+
+Install `ffmpeg` and make sure it is on `PATH`.
+
+## 2. Prepare the environment
+
+The Makefile uses the `uv`-managed project environment, updates both upstream
+repositories to their current default branches, patches UNMIXX's non-portable
+requirements entry, and installs both upstream requirement files:
+
+```bash
+make prepare
+```
+
+The default repository locations are `third_party/unmixx` and
+`third_party/Music-Source-Separation-Training`.
+
+The project's `requirements.txt` is deliberately small: it lists only packages
+imported or invoked directly by this repository's scripts. Upstream
+dependencies remain owned by their repositories. The local
+`patches/unmixx-requirements.patch` removes UNMIXX's editable path to the
+original author's `tssep` checkout. If an upstream change makes that patch stop
+applying, `make prepare` stops so the patch can be reviewed and updated.
+
+## 3. Music-Source-Separation-Training
+
+The script automatically downloads the public Mega53 assets from `oulianov/mvsep_mega_53`:
+
+```text
+mvsep_mega_model_bs_roformer_53_stems.yaml
+mvsep_mega_model_bs_roformer_53_stems_v1.ckpt
+```
+
+The checkpoint is large (about 1.37 GB).
+
+## 4. UNMIXX
+
+If `import look2hear.models` reports another missing package, install that package specifically rather than recreating the author's entire development environment.
+
+Verify these files exist:
+
+```text
+third_party/unmixx/inference.py
+third_party/unmixx/ckpt/conf.yml
+third_party/unmixx/ckpt/best.ckpt
+```
+
+# Run
+
+The pipeline now has three modes. Stage 1 (instrument/vocal isolation) can also be bypassed independently with `--input-is-vocals`.
+
+## A. Full hierarchy: duet + backing choir
+
+Use this when the song has two foreground singers plus a backing choir/ensemble:
+
+```bash
+python pipeline.py song.mp3 \
+  --mode full \
+  --mss-repo third_party/Music-Source-Separation-Training \
+  --unmixx-repo third_party/unmixx \
+  --device cuda \
+  --output-dir run_song
+```
+
+Flow: `mix -> all vocals -> foreground/choir -> singer 1/singer 2`.
+
+## B. Duet only: no backing choir
+
+Use this when the vocal stem is essentially just two foreground singers. Mega53 is skipped completely:
+
+```bash
+make run-duet INPUT=duet_song.mp3 OUTPUT_DIR=run_duet DEVICE=cuda
+```
+
+Flow: `mix -> all vocals -> singer 1/singer 2`. No `--mss-repo` is needed.
+
+## C. Lead singer + backing choir: no duet
+
+Use this when there is one principal singer plus backing/ensemble vocals. UNMIXX is skipped completely:
+
+```bash
+python pipeline.py lead_and_choir.mp3 \
+  --mode lead-choir \
+  --mss-repo third_party/Music-Source-Separation-Training \
+  --device cuda \
+  --output-dir run_lead_choir
+```
+
+Flow: `mix -> all vocals -> lead vocal + choir/backing`. No `--unmixx-repo` is needed.
+
+## D. Start from an already isolated vocal stem
+
+Add `--input-is-vocals` to any mode to skip Mel-Band RoFormer. The input is decoded to a standard WAV and used directly as the all-vocals stem. For example:
+
+```bash
+python pipeline.py already_isolated_vocals.wav \
+  --mode duet \
+  --input-is-vocals \
+  --unmixx-repo third_party/unmixx \
+  --device cuda \
+  --output-dir run_existing_vocals
+```
+
+# Final outputs
+
+Outputs depend on the selected mode:
+
+```text
+full:
+  00_all_vocals.wav
+  01_choir_backing.wav
+  02_duet_mix.wav
+  03_singer_01.wav
+  04_singer_02.wav
+
+duet:
+  00_all_vocals.wav
+  02_duet_mix.wav
+  03_singer_01.wav
+  04_singer_02.wav
+
+lead-choir:
+  00_all_vocals.wav
+  01_choir_backing.wav
+  02_lead_vocal.wav
+```
+
+`00_all_vocals.wav` is useful for checking Stage 1.
+
+`01_choir_backing.wav` is Mega53's `back-vocal` output.
+
+`02_duet_mix.wav` is Mega53's `lead-vocal` output before UNMIXX. Keep this file: it is the most important diagnostic input if Stage 3 fails.
+
+`03_singer_01.wav` and `04_singer_02.wav` are UNMIXX's two source estimates.
+
+## Sample rates
+
+Stages 1 and 2 stay at 44.1 kHz stereo where possible. Before UNMIXX, `02_duet_mix.wav` is converted to a **24 kHz mono** working file because that matches the public UNMIXX checkpoint configuration.
+
+Therefore the two final singer files are expected to be 24 kHz mono, while the choir and duet diagnostic stems retain the upstream resolution.
+
+Do not resample the UNMIXX outputs back to 44.1 kHz just to make the number larger; that does not restore lost bandwidth. Resample only if a downstream DAW/workflow requires a common project rate.
+
+# Identity and output ordering
+
+UNMIXX solves blind two-source separation. It does not know character names or singer identities.
+
+This means:
+
+```text
+singer_01 != guaranteed Alice
+singer_02 != guaranteed Bob
+```
+
+The ordering can be permutation-ambiguous. If you process multiple songs or isolated sections, output 1 may correspond to a different person in another run.
+
+If persistent identity matters, add a later singer-identification / embedding step using clean reference clips for each performer.
+
+# What to do if the duet separation is imperfect
+
+## 1. First listen to `02_duet_mix.wav`
+
+If the choir is already mostly gone and both singers are clearly present, Stage 3 has a good input and UNMIXX is the model to tune/replace.
+
+If one singer is missing in `02_duet_mix.wav`, UNMIXX cannot recover that singer. The problem is Stage 2, not Stage 3.
+
+## 2. Check `01_choir_backing.wav`
+
+If part of a principal singer appears there, Mega53 assigned that phrase as backing vocal. Possible future improvement: recombine selected regions or use a dedicated foreground-vs-ensemble vocal model.
+
+## 3. Avoid processing between Stage 2 and Stage 3
+
+Do not add aggressive:
+
+- denoising,
+- noise gates,
+- dereverb,
+- stereo widening,
+- compression,
+- clipping normalization.
+
+Those operations can remove cues that help distinguish the two singers.
+
+## 4. Try shorter sections manually
+
+UNMIXX's published training config uses 4-second segments. The project now uses **4-second chunks with 1-second overlap by default**. This prevents full-song attention tensors from exhausting GPU memory and is closer to the model's training regime.
+
+The chunker also compares the overlapping tails/heads of both estimated sources and chooses the source permutation that maximizes continuity before overlap-adding the chunks. This greatly reduces `singer_01` / `singer_02` swaps at chunk boundaries, although identity can still become ambiguous after long silences.
+
+# Future improvements worth trying
+
+## A. Tune chunked UNMIXX / permutation tracking
+
+For long songs, a robust Stage 3 could use overlapping windows and decide whether each new pair should be assigned as:
+
+```text
+new A -> previous A
+new B -> previous B
+```
+
+or swapped:
+
+```text
+new A -> previous B
+new B -> previous A
+```
+
+using correlation, spectral similarity and/or singer embeddings in the overlap region.
+
+This is now implemented. You can tune it with `--unmixx-chunk-seconds` and `--unmixx-overlap-seconds`. The defaults are `4.0` and `1.0` seconds. Longer chunks may improve context but raise VRAM sharply; shorter chunks reduce memory but can hurt separation and continuity.
+
+## B. Mixture consistency
+
+UNMIXX outputs do not necessarily sum exactly to the duet mixture. A post-processing projection can enforce approximately:
+
+```text
+singer_01 + singer_02 = duet_mix
+```
+
+The residual can be distributed equally or according to local source energy. This sometimes improves reconstruction but can also re-introduce leakage, so it should be benchmarked rather than enabled blindly.
+
+## C. Singer-conditioned extraction
+
+If you have clean reference clips for the two actors, conditioned extraction may eventually beat blind separation:
+
+```text
+duet + reference(A) -> A
+duet + reference(B) -> B
+```
+
+This also solves the identity-labeling problem.
+
+## D. Pitch-conditioned separation
+
+Musical-theatre harmony parts often occupy different F0 trajectories. Multi-pitch estimation could be used as an additional conditioning signal, especially for thirds, sixths and contrary-motion harmonies.
+
+It helps less when the singers are in unison or octaves.
+
+## E. Stereo-aware duet separation
+
+The current public UNMIXX checkpoint is integrated at 24 kHz mono. That throws away panning information from Stage 2. A future stereo duet separator could exploit the fact that commercial mixes often place the two principals differently in the stereo field or give them different reverbs.
+
+## F. Zero-shot duet diffusion separator
+
+The previously discussed zero-shot duet singing diffusion model is still an interesting alternate Stage 3, particularly if UNMIXX suffers from identity instability. Diffusion inference is typically much slower, so UNMIXX is the practical default.
+
+## G. Dedicated theatre / pop-duet fine-tuning
+
+The strongest long-term path is fine-tuning a two-singer separator on examples that resemble the actual target domain:
+
+- Broadway / West End style belting,
+- simultaneous lyrics,
+- thirds/sixths/octaves,
+- lead doubles,
+- room/reverb tails,
+- compressed/mastered stems,
+- Stage-2 separation artifacts.
+
+Crucially, training on **Mega53-produced duet stems** rather than pristine isolated vocals would teach Stage 3 the exact artifacts it will see in production.
+
+# Troubleshooting
+
+## Mega53 runs out of VRAM
+
+Mega53 is the heaviest stage. Close other GPU applications. The upstream model notes recommend roughly 16 GB VRAM or more.
+
+## UNMIXX says files are missing
+
+Make sure your clone includes:
+
+```text
+ckpt/conf.yml
+ckpt/best.ckpt
+```
+
+and pass the repository root, not the `ckpt` folder:
+
+```bash
+--unmixx-repo third_party/unmixx
+```
+
+## `spk1.wav` / `spk2.wav` cannot be found
+
+The pipeline searches recursively because the official UNMIXX inference script writes to a nested directory derived from the model/checkpoint and input filename. If the upstream repository changes its naming convention, inspect `stage3_duet_unmixx/raw_unmixx/` and update `find_unique_stem()`.
+
+## One singer is consistently much louder
+
+That may be the actual mix balance. Do not normalize each final singer independently before judging separation: independent normalization can make tiny leakage sound like a major failure.
+
+# Model references
+
+- UNMIXX official repository: `jihoojung0106/unmixx`
+- UNMIXX paper: *UNMIXX: Untangling Highly Correlated Singing Voices Mixtures* (ICASSP 2026)
+- Music-Source-Separation-Training: `ZFTurbo/Music-Source-Separation-Training`
+- MVSep Mega 53: public BS-RoFormer 53-stem checkpoint with `lead-vocal` and `back-vocal`
+
+# Bottom line
+
+For the successful musical-theatre scenario, the intended interpretation is now:
+
+```text
+all vocals
+   -> Mega53
+       -> choir/backing
+       -> two-principal-singer mixture
+            -> UNMIXX
+                -> singer 1
+                -> singer 2
+```
+
+That is the project's new default architecture.
