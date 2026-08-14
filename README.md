@@ -271,7 +271,7 @@ UNMIXX's published training config uses 4-second segments. The project now uses 
 
 The chunker also compares the overlapping tails/heads of both estimated sources and chooses the source permutation that maximizes continuity before overlap-adding the chunks. This greatly reduces `singer_01` / `singer_02` swaps at chunk boundaries, although identity can still become ambiguous after long silences.
 
-# Future improvements worth trying
+# Roadmap
 
 ## A. Tune chunked UNMIXX / permutation tracking
 
@@ -341,6 +341,110 @@ The strongest long-term path is fine-tuning a two-singer separator on examples t
 - Stage-2 separation artifacts.
 
 Crucially, training on **Mega53-produced duet stems** rather than pristine isolated vocals would teach Stage 3 the exact artifacts it will see in production.
+
+## H. Three simultaneous lead singers
+
+The published UNMIXX checkpoint is a **two-source** model. This project is
+therefore also two-source by design: the chunked runner allocates two outputs,
+tracks only a keep-or-swap permutation between chunks, and writes
+`spk1.wav` and `spk2.wav`. Running the same checkpoint repeatedly is not a
+reliable way to obtain a third singer; artifacts and leakage from the first
+split are compounded by the second.
+
+The most promising route for three foreground singers is a three-source
+UNMIXX fine-tune. Keep Stages 1 and 2, then train Stage 3 on three-source
+foreground-vocal mixtures that include close harmony, unison, same-singer
+doubles, reverb, mastering, and—ideally—Mega53 artifacts. The model and
+runner must be generalized together:
+
+- change the UNMIXX source count from two to three and train a new checkpoint;
+- use three-source permutation-invariant training (six possible assignments);
+- emit `spk01.wav`, `spk02.wav`, and `spk03.wav`;
+- replace the current two-way overlap keep-or-swap rule with a three-way
+  maximum-similarity assignment between neighbouring chunks.
+
+There is no known drop-in public checkpoint for three named lead singers from
+a produced commercial mix. The useful research baseline is
+[MedleyVox](https://github.com/jeonchangbin49/MedleyVox): its benchmark
+includes an N-singing category and its work uses an iSRNet + Conv-TasNet
+approach. The official repository does not publish pretrained weights, so it
+is a training or fine-tuning starting point rather than an inference-only
+replacement. The [MedleyVox paper](https://arxiv.org/abs/2211.07302) and its
+[dataset](https://zenodo.org/records/7984549) are suitable references for
+three-source evaluation.
+
+[SepACap](https://openreview.net/pdf?id=oERJ6K8FIn) and score-informed choral
+separation are useful only for a cappella material or when the intended outputs
+are musical parts (such as SATB), rather than the identities of three
+individual singers. They are not replacements for a three-lead Stage 3 in a
+produced song.
+
+## I. SATB decomposition for backing vocals
+
+[SepACap](https://openreview.net/pdf?id=oERJ6K8FIn) and related SATB models
+are worth evaluating as an **optional post-processing branch** for
+`01_choir_backing.wav`, the backing-vocal stem produced by Mega53. They are
+designed to separate a cappella mixtures into musical parts such as soprano,
+alto, tenor, and bass; this is useful when the backing arrangement behaves like
+a conventional choir and part-level rehearsal or editing stems are the goal.
+
+They should not replace Mega53's lead-vocal/back-vocal stage. A produced
+backing stem can contain reverb, instruments, doubles, ad-libs, and singers
+outside conventional SATB ranges; a SATB model may then create artifacts or
+assign material to the wrong part. It also outputs **parts**, not the identities
+of individual backing singers.
+
+Recommended evaluation path:
+
+1. Run the existing full pipeline and keep `01_choir_backing.wav` unchanged.
+2. Apply a SATB model only to that stem, not to the original full mix.
+3. Compare the resulting parts by listening for lead-vocal leakage, missing
+   backing phrases, and part-assignment errors.
+4. Keep the SATB outputs only when they are more useful than the intact backing
+   stem; do not feed them back into Stage 3.
+
+This is most promising for relatively dry, clearly arranged choir passages. It
+is less appropriate for dense pop backing stacks, small ensembles with similar
+voice ranges, or any case where individual-singer identity is required.
+
+### Optional implemented pipeline
+
+`choir_parts_separation.py` is a separate pipeline that accepts an existing
+`01_choir_backing.wav`; it does not alter the main pipeline or feed any result
+into UNMIXX. It downloads the public
+[jaCappella DPTNet checkpoint](https://huggingface.co/jaCappella/DPTNet_jaCappella_VES_48k)
+on first use and produces these six estimates at 48 kHz mono:
+
+```text
+01_vocal_percussion.wav
+02_bass.wav
+03_alto.wav
+04_tenor.wav
+05_soprano.wav
+06_lead_vocal.wav
+```
+
+Run it with:
+
+```bash
+make run-choir-parts \
+  CHOIR_INPUT=run_song/final/01_choir_backing.wav \
+  CHOIR_OUTPUT_DIR=run_song/choir_parts \
+  CHOIR_DEVICE=cuda
+```
+
+The checkpoint selection is deliberate. SepACap reports the highest published
+JaCappella scores, but this project uses DPTNet because its authors publish a
+downloadable checkpoint and six-source configuration. It is the best
+publicly-downloadable, benchmarked choice identified for this implementation;
+it is not a claim that DPTNet exceeds SepACap's reported score. See the
+[SepACap benchmark](https://openreview.net/pdf?id=oERJ6K8FIn) and the
+[DPTNet model card](https://huggingface.co/jaCappella/DPTNet_jaCappella_VES_48k).
+
+This is an a-cappella model trained on Japanese vocal ensembles. Its outputs
+are musical-part estimates, not reliable individual-singer identities; audition
+them before using them in production. The jaCappella model card directs users
+to the dataset license, so review it before use.
 
 # Troubleshooting
 

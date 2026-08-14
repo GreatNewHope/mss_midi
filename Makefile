@@ -15,6 +15,11 @@ OUTPUT_DIR ?= run_song
 DEVICE ?= cuda
 UNMIXX_CHUNK_SECONDS ?= 4
 UNMIXX_OVERLAP_SECONDS ?= 1
+CHOIR_INPUT ?=
+CHOIR_OUTPUT_DIR ?= choir_parts
+CHOIR_DEVICE ?= $(DEVICE)
+CHOIR_SEGMENT_SECONDS ?= 5.046
+CHOIR_OVERLAP_SECONDS ?= 0.5
 
 UV_AVAILABLE := $(shell command -v $(UV) >/dev/null 2>&1 && printf uv || printf pip)
 ifeq ($(PACKAGE_MANAGER),auto)
@@ -35,11 +40,13 @@ else
 $(error PACKAGE_MANAGER must be auto, uv, or pip)
 endif
 
-.PHONY: help prepare repositories patch-unmixx-requirements dependencies run-duet duet
+.PHONY: help prepare repositories patch-unmixx-requirements dependencies run-duet duet run-full full run-choir-parts choir-parts
 
 help:
 	@echo "make prepare    Update upstream repositories and install their latest requirements ($(RESOLVED_PACKAGE_MANAGER))."
 	@echo "make run-duet   Prepare the environment and run the duet pipeline."
+	@echo "make run-full   Prepare the environment and run the full lead/choir/duet pipeline."
+	@echo "make run-choir-parts CHOIR_INPUT=...  Split an existing 01_choir_backing.wav into vocal-ensemble parts."
 
 prepare: repositories patch-unmixx-requirements dependencies
 
@@ -74,3 +81,21 @@ run-duet duet: prepare
 		--unmixx-chunk-seconds "$(UNMIXX_CHUNK_SECONDS)" \
 		--unmixx-overlap-seconds "$(UNMIXX_OVERLAP_SECONDS)" \
 		--output-dir "$(OUTPUT_DIR)"
+
+run-full full: prepare
+	$(RUN_PYTHON) pipeline.py "$(INPUT)" \
+		--mode full \
+		--mss-repo "$(MSS_REPO)" \
+		--unmixx-repo "$(UNMIXX_REPO)" \
+		--device "$(DEVICE)" \
+		--unmixx-chunk-seconds "$(UNMIXX_CHUNK_SECONDS)" \
+		--unmixx-overlap-seconds "$(UNMIXX_OVERLAP_SECONDS)" \
+		--output-dir "$(OUTPUT_DIR)"
+
+run-choir-parts choir-parts: prepare
+	@test -n "$(CHOIR_INPUT)" || (echo "Set CHOIR_INPUT to an existing 01_choir_backing.wav file." >&2; exit 2)
+	$(RUN_PYTHON) choir_parts_separation.py "$(CHOIR_INPUT)" \
+		--output-dir "$(CHOIR_OUTPUT_DIR)" \
+		--device "$(CHOIR_DEVICE)" \
+		--segment-seconds "$(CHOIR_SEGMENT_SECONDS)" \
+		--overlap-seconds "$(CHOIR_OVERLAP_SECONDS)"

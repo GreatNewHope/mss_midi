@@ -2,6 +2,7 @@
 #
 # `make prepare` installs the upstream requirements from the current default
 # branches of UNMIXX and Music-Source-Separation-Training separately.
+asteroid
 huggingface-hub
 melband-roformer-infer
 PyYAML
