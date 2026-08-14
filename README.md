@@ -74,9 +74,10 @@ Install `ffmpeg` and make sure it is on `PATH`.
 
 ## 2. Prepare the environment
 
-The Makefile uses the `uv`-managed project environment, updates both upstream
-repositories to their current default branches, patches UNMIXX's non-portable
-requirements entry, and installs both upstream requirement files:
+The Makefile prefers the local `uv`-managed project environment, then falls
+back to `pip` when `uv` is unavailable. It updates both upstream repositories
+to their current default branches, patches UNMIXX's non-portable requirements
+entry, and installs both upstream requirement files:
 
 ```bash
 make prepare
@@ -91,6 +92,19 @@ dependencies remain owned by their repositories. The local
 `patches/unmixx-requirements.patch` removes UNMIXX's editable path to the
 original author's `tssep` checkout. If an upstream change makes that patch stop
 applying, `make prepare` stops so the patch can be reviewed and updated.
+
+### Colab
+
+Run the repository from `/content`, then use Colab's existing Python
+environment explicitly:
+
+```bash
+make prepare PACKAGE_MANAGER=pip PYTHON=python
+```
+
+The supplied notebook uses this command and points UNMIXX at
+`/content/third_party/unmixx`. A Colab GPU runtime is required for practical
+performance.
 
 ## 3. Music-Source-Separation-Training
 

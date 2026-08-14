@@ -1,7 +1,10 @@
-# Uses the uv-managed project environment. Override values as needed, e.g.:
+# Prefers uv locally and falls back to pip when uv is unavailable (for example,
+# in Colab). Override values as needed, e.g.:
 # make run-duet INPUT=/path/to/song.flac DEVICE=cuda:0
 
 UV ?= uv
+PYTHON ?= python3
+PACKAGE_MANAGER ?= auto
 THIRD_PARTY ?= third_party
 UNMIXX_REPO ?= $(THIRD_PARTY)/unmixx
 MSS_REPO ?= $(THIRD_PARTY)/Music-Source-Separation-Training
@@ -13,10 +16,29 @@ DEVICE ?= cuda
 UNMIXX_CHUNK_SECONDS ?= 4
 UNMIXX_OVERLAP_SECONDS ?= 1
 
+UV_AVAILABLE := $(shell command -v $(UV) >/dev/null 2>&1 && printf uv || printf pip)
+ifeq ($(PACKAGE_MANAGER),auto)
+RESOLVED_PACKAGE_MANAGER := $(UV_AVAILABLE)
+else
+RESOLVED_PACKAGE_MANAGER := $(PACKAGE_MANAGER)
+endif
+
+ifeq ($(RESOLVED_PACKAGE_MANAGER),uv)
+PREPARE_ENVIRONMENT = $(UV) sync --upgrade --inexact
+INSTALL_REQUIREMENTS = $(UV) pip install --upgrade -r
+RUN_PYTHON = $(UV) run python
+else ifeq ($(RESOLVED_PACKAGE_MANAGER),pip)
+PREPARE_ENVIRONMENT = $(PYTHON) -m pip install --upgrade pip
+INSTALL_REQUIREMENTS = $(PYTHON) -m pip install --upgrade -r
+RUN_PYTHON = $(PYTHON)
+else
+$(error PACKAGE_MANAGER must be auto, uv, or pip)
+endif
+
 .PHONY: help prepare repositories patch-unmixx-requirements dependencies run-duet duet
 
 help:
-	@echo "make prepare    Update both upstream repositories and install their latest requirements with uv."
+	@echo "make prepare    Update upstream repositories and install their latest requirements ($(RESOLVED_PACKAGE_MANAGER))."
 	@echo "make run-duet   Prepare the environment and run the duet pipeline."
 
 prepare: repositories patch-unmixx-requirements dependencies
@@ -39,13 +61,13 @@ patch-unmixx-requirements: repositories $(UNMIXX_REQUIREMENTS_PATCH)
 	git -C "$(UNMIXX_REPO)" apply "$(UNMIXX_REQUIREMENTS_PATCH)"
 
 dependencies: patch-unmixx-requirements requirements.txt pyproject.toml
-	$(UV) sync --upgrade --inexact
-	$(UV) pip install --upgrade -r "$(UNMIXX_REPO)/requirements.txt"
-	$(UV) pip install --upgrade -r "$(MSS_REPO)/requirements.txt"
-	$(UV) pip install --upgrade -r requirements.txt
+	$(PREPARE_ENVIRONMENT)
+	$(INSTALL_REQUIREMENTS) "$(UNMIXX_REPO)/requirements.txt"
+	$(INSTALL_REQUIREMENTS) "$(MSS_REPO)/requirements.txt"
+	$(INSTALL_REQUIREMENTS) requirements.txt
 
 run-duet duet: prepare
-	$(UV) run python pipeline.py "$(INPUT)" \
+	$(RUN_PYTHON) pipeline.py "$(INPUT)" \
 		--mode duet \
 		--unmixx-repo "$(UNMIXX_REPO)" \
 		--device "$(DEVICE)" \
