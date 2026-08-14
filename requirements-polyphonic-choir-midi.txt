@@ -1,0 +1,2 @@
+# Required only by audio_to_midi.py (the unseparated-choir fallback).
+basic-pitch

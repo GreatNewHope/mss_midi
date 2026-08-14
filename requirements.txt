@@ -1,10 +1,7 @@
 # Dependencies used directly by this repository's scripts.
 #
-# `make prepare` installs GAME's upstream requirements. UNMIXX and
-# Music-Source-Separation-Training upstream files are frozen/development
-# environments; this project's inference runners need only the packages here.
-asteroid
-basic-pitch
+# `make prepare` installs only the core separation runtime. Optional choir-part,
+# polyphonic-MIDI, and GAME pipelines install their own requirements on demand.
 huggingface-hub
 melband-roformer-infer
 PyYAML

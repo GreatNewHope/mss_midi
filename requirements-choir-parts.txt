@@ -1,0 +1,2 @@
+# Required only by choir_parts_separation.py.
+asteroid

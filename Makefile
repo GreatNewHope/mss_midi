@@ -75,11 +75,12 @@ endif
 GAME_LANGUAGE_FLAG = $(if $(MIDI_LANGUAGE),--language "$(MIDI_LANGUAGE)")
 GAME_GLOB_FLAG = $(if $(MIDI_GLOB),--glob "$(MIDI_GLOB)")
 
-.PHONY: help prepare prepare-game-midi repositories patch-unmixx-requirements dependencies game-dependencies download-game-model run-duet duet run-full full run-choir-parts choir-parts run-midi midi run-singing-midi singing-midi run-polyphonic-choir-midi polyphonic-choir-midi
+.PHONY: help prepare prepare-game-midi prepare-choir-parts prepare-polyphonic-choir-midi repositories patch-unmixx-requirements dependencies game-dependencies choir-parts-dependencies polyphonic-choir-midi-dependencies download-game-model run-duet duet run-full full run-choir-parts choir-parts run-midi midi run-singing-midi singing-midi run-polyphonic-choir-midi polyphonic-choir-midi
 
 help:
 	@echo "make prepare    Update separation repositories and install only separation runtime requirements ($(RESOLVED_PACKAGE_MANAGER))."
 	@echo "make prepare-game-midi  Additionally install GAME and download its current MIDI model."
+	@echo "make prepare-choir-parts  Additionally install the DPTNet choir-part runtime."
 	@echo "make run-duet   Prepare the environment and run the duet pipeline."
 	@echo "make run-full   Prepare the environment and run the full lead/choir/duet pipeline."
 	@echo "make run-choir-parts CHOIR_INPUT=...  Split an existing 01_choir_backing.wav into vocal-ensemble parts."
@@ -90,10 +91,14 @@ prepare: repositories patch-unmixx-requirements dependencies
 
 prepare-game-midi: prepare game-dependencies download-game-model
 
+prepare-choir-parts: prepare choir-parts-dependencies
+
+prepare-polyphonic-choir-midi: prepare polyphonic-choir-midi-dependencies
+
 repositories:
 	@mkdir -p "$(THIRD_PARTY)"
 	@if test -d "$(UNMIXX_REPO)/.git"; then \
-		git -C "$(UNMIXX_REPO)" checkout -- requirements.txt && git -C "$(UNMIXX_REPO)" pull --ff-only; \
+		git -C "$(UNMIXX_REPO)" checkout -- requirements.txt look2hear/models/unmixx_model.py && git -C "$(UNMIXX_REPO)" pull --ff-only; \
 	else \
 		git clone https://github.com/jihoojung0106/unmixx.git "$(UNMIXX_REPO)"; \
 	fi
@@ -109,7 +114,7 @@ repositories:
 	fi
 
 patch-unmixx-requirements: repositories patch_unmixx_requirements.py
-	$(RUN_PYTHON) patch_unmixx_requirements.py "$(UNMIXX_REPO)/requirements.txt"
+	$(RUN_PYTHON) patch_unmixx_requirements.py "$(UNMIXX_REPO)"
 
 dependencies: patch-unmixx-requirements requirements.txt pyproject.toml
 	$(PREPARE_ENVIRONMENT)
@@ -119,6 +124,12 @@ dependencies: patch-unmixx-requirements requirements.txt pyproject.toml
 
 game-dependencies: repositories
 	$(INSTALL_REQUIREMENTS) "$(GAME_REPO)/requirements.txt"
+
+choir-parts-dependencies: requirements-choir-parts.txt
+	$(INSTALL_REQUIREMENTS) requirements-choir-parts.txt
+
+polyphonic-choir-midi-dependencies: requirements-polyphonic-choir-midi.txt
+	$(INSTALL_REQUIREMENTS) requirements-polyphonic-choir-midi.txt
 
 download-game-model: repositories download_game_model.py
 	$(RUN_PYTHON) download_game_model.py --output-dir "$(GAME_MODEL_DIR)" --upgrade
@@ -142,7 +153,7 @@ run-full full: prepare
 		--unmixx-overlap-seconds "$(UNMIXX_OVERLAP_SECONDS)" \
 		--output-dir "$(OUTPUT_DIR)"
 
-run-choir-parts choir-parts: prepare
+run-choir-parts choir-parts: prepare-choir-parts
 	@test -n "$(CHOIR_INPUT)" || (echo "Set CHOIR_INPUT to an existing 01_choir_backing.wav file." >&2; exit 2)
 	$(RUN_PYTHON) choir_parts_separation.py "$(CHOIR_INPUT)" \
 		--output-dir "$(CHOIR_OUTPUT_DIR)" \
@@ -156,7 +167,7 @@ run-singing-midi singing-midi: prepare-game-midi
 	@test -n "$(MIDI_INPUT)" || (echo "Set MIDI_INPUT to an isolated singing file or directory of stems." >&2; exit 2)
 	$(RUN_PYTHON) game_to_midi.py "$(MIDI_INPUT)" --output-dir "$(MIDI_OUTPUT_DIR)" --game-repo "$(GAME_REPO)" --model-dir "$(GAME_MODEL_DIR)" --batch-size "$(MIDI_BATCH_SIZE)" --tempo "$(MIDI_TEMPO)" $(GAME_LANGUAGE_FLAG) $(GAME_GLOB_FLAG)
 
-run-polyphonic-choir-midi polyphonic-choir-midi: prepare
+run-polyphonic-choir-midi polyphonic-choir-midi: prepare-polyphonic-choir-midi
 	@test -n "$(MIDI_INPUT)" || (echo "Set MIDI_INPUT to a non-separated choir mix or directory." >&2; exit 2)
 	$(RUN_PYTHON) audio_to_midi.py "$(MIDI_INPUT)" \
 		--output-dir "$(MIDI_OUTPUT_DIR)"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove UNMIXX's private editable tssep checkout from requirements.txt."""
+"""Apply the small local changes needed for UNMIXX inference."""
 
 from __future__ import annotations
 
@@ -14,10 +14,15 @@ TSSEP_COMMENT = re.compile(r"^\s*#.*\btssep\b.*$", re.IGNORECASE)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("requirements", type=Path)
+    parser.add_argument("unmixx_repo", type=Path)
     args = parser.parse_args()
 
-    original = args.requirements.read_text(encoding="utf-8")
+    requirements = args.unmixx_repo / "requirements.txt"
+    model_file = args.unmixx_repo / "look2hear" / "models" / "unmixx_model.py"
+    if not requirements.is_file() or not model_file.is_file():
+        raise FileNotFoundError(f"Expected an UNMIXX repository, got: {args.unmixx_repo}")
+
+    original = requirements.read_text(encoding="utf-8")
     lines = original.splitlines(keepends=True)
     patched: list[str] = []
     removed = 0
@@ -42,11 +47,37 @@ def main() -> None:
 
     if removed == 0:
         raise RuntimeError(
-            f"No editable tssep requirement found in {args.requirements}. "
+            f"No editable tssep requirement found in {requirements}. "
             "Review the current upstream requirements before changing this patcher."
         )
-    args.requirements.write_text("".join(patched), encoding="utf-8")
-    print(f"Removed UNMIXX's private editable tssep requirement from {args.requirements}.")
+    requirements.write_text("".join(patched), encoding="utf-8")
+    print(f"Removed UNMIXX's private editable tssep requirement from {requirements}.")
+
+    original_model = model_file.read_text(encoding="utf-8")
+    upstream_import = "from asteroid.utils.torch_utils import pad_x_to_y\n"
+    local_implementation = '''def pad_x_to_y(x, y):
+    """Match UNMIXX's final estimate length without importing Asteroid."""
+    target_length = y.shape[-1]
+    if x.shape[-1] > target_length:
+        return x[..., :target_length]
+    if x.shape[-1] < target_length:
+        return F.pad(x, (0, target_length - x.shape[-1]))
+    return x
+
+'''
+    if upstream_import in original_model:
+        model_file.write_text(
+            original_model.replace(upstream_import, local_implementation, count=1),
+            encoding="utf-8",
+        )
+        print(f"Replaced UNMIXX's Asteroid-only pad helper in {model_file}.")
+    elif local_implementation in original_model:
+        print("UNMIXX's local pad helper is already installed.")
+    else:
+        raise RuntimeError(
+            f"UNMIXX no longer has the expected Asteroid pad helper import in {model_file}. "
+            "Review this local inference patch."
+        )
 
 
 if __name__ == "__main__":

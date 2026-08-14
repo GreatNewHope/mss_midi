@@ -86,16 +86,18 @@ make prepare
 The default repository locations are `third_party/unmixx` and
 `third_party/Music-Source-Separation-Training`.
 
-The project's `requirements.txt` is deliberately small: it lists only packages
-imported or invoked directly by this repository's inference scripts. UNMIXX and
+The project's `requirements.txt` is deliberately small: it lists only the core
+full-separation runtime. `requirements-choir-parts.txt`,
+`requirements-polyphonic-choir-midi.txt`, and GAME's upstream requirements are
+installed only by their respective optional pipelines. UNMIXX and
 Music-Source-Separation-Training publish frozen development/workstation exports
 that include incompatible CUDA builds, notebooks, GUI tools, and training-only
 packages; `make prepare` skips those exports by default. Use
 `UNMIXX_REQUIREMENTS_MODE=full` or `MSS_REQUIREMENTS_MODE=full` only when you
 intentionally want to reproduce an upstream development environment. The local
 `patch_unmixx_requirements.py` removes UNMIXX's editable path to the original
-author’s `tssep` checkout by identifying the requirement itself, rather than an
-old surrounding line number. If upstream removes or renames that dependency,
+author’s `tssep` checkout and replaces its Asteroid-only padding helper with an
+equivalent local implementation. If upstream removes or renames either target,
 `make prepare` stops so the change can be reviewed.
 
 ### Colab
