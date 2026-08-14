@@ -10,6 +10,8 @@ UNMIXX_REPO ?= $(THIRD_PARTY)/unmixx
 MSS_REPO ?= $(THIRD_PARTY)/Music-Source-Separation-Training
 GAME_REPO ?= $(THIRD_PARTY)/GAME
 GAME_MODEL_DIR ?= $(THIRD_PARTY)/GAME-model-large
+UNMIXX_REQUIREMENTS_MODE ?= runtime
+MSS_REQUIREMENTS_MODE ?= runtime
 
 INPUT ?= songs/FallingSlowly/01 - Falling Slowly.flac
 OUTPUT_DIR ?= run_song
@@ -47,13 +49,36 @@ else
 $(error PACKAGE_MANAGER must be auto, uv, or pip)
 endif
 
+ifeq ($(UNMIXX_REQUIREMENTS_MODE),runtime)
+# UNMIXX's upstream requirements.txt is a frozen author workstation export.
+# The bundled runner imports only torch, torchaudio, PyYAML, NumPy, asteroid,
+# and the repository-local look2hear package; these are installed through this
+# project requirements or the model runtimes below.
+INSTALL_UNMIXX_REQUIREMENTS = @echo "Skipping UNMIXX's full frozen requirements export; using the runtime dependencies already installed by this project."
+else ifeq ($(UNMIXX_REQUIREMENTS_MODE),full)
+INSTALL_UNMIXX_REQUIREMENTS = $(INSTALL_REQUIREMENTS) "$(UNMIXX_REPO)/requirements.txt"
+else
+$(error UNMIXX_REQUIREMENTS_MODE must be runtime or full)
+endif
+
+ifeq ($(MSS_REQUIREMENTS_MODE),runtime)
+# Music-Source-Separation-Training's requirements also include training tools,
+# GUI packages, and optional CUDA kernels. Mega53 inference relies on the
+# runtime packages installed by this project and melband-roformer-infer.
+INSTALL_MSS_REQUIREMENTS = @echo "Skipping Music-Source-Separation-Training's full training requirements; using the runtime dependencies already installed by this project."
+else ifeq ($(MSS_REQUIREMENTS_MODE),full)
+INSTALL_MSS_REQUIREMENTS = $(INSTALL_REQUIREMENTS) "$(MSS_REPO)/requirements.txt"
+else
+$(error MSS_REQUIREMENTS_MODE must be runtime or full)
+endif
+
 GAME_LANGUAGE_FLAG = $(if $(MIDI_LANGUAGE),--language "$(MIDI_LANGUAGE)")
 GAME_GLOB_FLAG = $(if $(MIDI_GLOB),--glob "$(MIDI_GLOB)")
 
 .PHONY: help prepare repositories patch-unmixx-requirements dependencies download-game-model run-duet duet run-full full run-choir-parts choir-parts run-midi midi run-singing-midi singing-midi run-polyphonic-choir-midi polyphonic-choir-midi
 
 help:
-	@echo "make prepare    Update upstream repositories, install their latest requirements, and update GAME Large ($(RESOLVED_PACKAGE_MANAGER))."
+	@echo "make prepare    Update upstream repositories, install runtime requirements, and update GAME Large ($(RESOLVED_PACKAGE_MANAGER))."
 	@echo "make run-duet   Prepare the environment and run the duet pipeline."
 	@echo "make run-full   Prepare the environment and run the full lead/choir/duet pipeline."
 	@echo "make run-choir-parts CHOIR_INPUT=...  Split an existing 01_choir_backing.wav into vocal-ensemble parts."
@@ -85,8 +110,8 @@ patch-unmixx-requirements: repositories patch_unmixx_requirements.py
 
 dependencies: patch-unmixx-requirements requirements.txt pyproject.toml
 	$(PREPARE_ENVIRONMENT)
-	$(INSTALL_REQUIREMENTS) "$(UNMIXX_REPO)/requirements.txt"
-	$(INSTALL_REQUIREMENTS) "$(MSS_REPO)/requirements.txt"
+	$(INSTALL_UNMIXX_REQUIREMENTS)
+	$(INSTALL_MSS_REQUIREMENTS)
 	$(INSTALL_REQUIREMENTS) "$(GAME_REPO)/requirements.txt"
 	$(INSTALL_REQUIREMENTS) requirements.txt
 

@@ -1,7 +1,8 @@
 # Dependencies used directly by this repository's scripts.
 #
-# `make prepare` installs the upstream requirements from the current default
-# branches of UNMIXX and Music-Source-Separation-Training separately.
+# `make prepare` installs GAME's upstream requirements. UNMIXX and
+# Music-Source-Separation-Training upstream files are frozen/development
+# environments; this project's inference runners need only the packages here.
 asteroid
 basic-pitch
 huggingface-hub
