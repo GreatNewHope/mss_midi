@@ -10,7 +10,6 @@ UNMIXX_REPO ?= $(THIRD_PARTY)/unmixx
 MSS_REPO ?= $(THIRD_PARTY)/Music-Source-Separation-Training
 GAME_REPO ?= $(THIRD_PARTY)/GAME
 GAME_MODEL_DIR ?= $(THIRD_PARTY)/GAME-model-large
-UNMIXX_REQUIREMENTS_PATCH := $(CURDIR)/patches/unmixx-requirements.patch
 
 INPUT ?= songs/FallingSlowly/01 - Falling Slowly.flac
 OUTPUT_DIR ?= run_song
@@ -81,9 +80,8 @@ repositories:
 		git clone https://github.com/openvpi/GAME.git "$(GAME_REPO)"; \
 	fi
 
-patch-unmixx-requirements: repositories $(UNMIXX_REQUIREMENTS_PATCH)
-	git -C "$(UNMIXX_REPO)" apply --check "$(UNMIXX_REQUIREMENTS_PATCH)"
-	git -C "$(UNMIXX_REPO)" apply "$(UNMIXX_REQUIREMENTS_PATCH)"
+patch-unmixx-requirements: repositories patch_unmixx_requirements.py
+	$(RUN_PYTHON) patch_unmixx_requirements.py "$(UNMIXX_REPO)/requirements.txt"
 
 dependencies: patch-unmixx-requirements requirements.txt pyproject.toml
 	$(PREPARE_ENVIRONMENT)

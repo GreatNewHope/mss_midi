@@ -76,7 +76,7 @@ Install `ffmpeg` and make sure it is on `PATH`.
 
 The Makefile prefers the local `uv`-managed project environment, then falls
 back to `pip` when `uv` is unavailable. It updates both upstream repositories
-to their current default branches, patches UNMIXX's non-portable requirements
+to their current default branches, removes UNMIXX's non-portable requirements
 entry, and installs both upstream requirement files:
 
 ```bash
@@ -89,9 +89,10 @@ The default repository locations are `third_party/unmixx` and
 The project's `requirements.txt` is deliberately small: it lists only packages
 imported or invoked directly by this repository's scripts. Upstream
 dependencies remain owned by their repositories. The local
-`patches/unmixx-requirements.patch` removes UNMIXX's editable path to the
-original author's `tssep` checkout. If an upstream change makes that patch stop
-applying, `make prepare` stops so the patch can be reviewed and updated.
+`patch_unmixx_requirements.py` removes UNMIXX's editable path to the original
+author's `tssep` checkout by identifying the requirement itself, rather than an
+old surrounding line number. If upstream removes or renames that dependency,
+`make prepare` stops so the change can be reviewed.
 
 ### Colab
 
