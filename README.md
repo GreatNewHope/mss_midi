@@ -455,7 +455,9 @@ to the dataset license, so review it before use.
 # MIDI transcription
 
 MIDI transcription is a separate branch: it never runs, modifies, or feeds
-back into any audio separator. There are two deliberately different routes.
+back into any audio separator. Its larger GAME dependency set is installed only
+by a GAME MIDI command; regular separation commands do not change a Colab
+runtime's NumPy/TensorFlow stack. There are two deliberately different routes.
 
 ## Isolated lead and choir-part stems: GAME Large
 
@@ -463,7 +465,7 @@ Use [GAME](https://github.com/openvpi/GAME), the current successor to SOME, for
 an individual lead singer or an already-separated musical choir part. GAME is
 specifically designed for singing-to-MIDI extraction and its authors document
 robustness to separated vocals, noise, reverb, and accompaniment. `make
-prepare` updates GAME from its default branch, installs its current upstream
+run-midi` updates GAME from its default branch, installs its current upstream
 requirements, and downloads the largest compatible model bundle from the newest
 official release that supports GAME's Python `infer.py` route into
 `third_party/GAME-model-large`. GAME's latest release may contain ONNX-only

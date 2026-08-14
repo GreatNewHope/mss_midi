@@ -75,17 +75,20 @@ endif
 GAME_LANGUAGE_FLAG = $(if $(MIDI_LANGUAGE),--language "$(MIDI_LANGUAGE)")
 GAME_GLOB_FLAG = $(if $(MIDI_GLOB),--glob "$(MIDI_GLOB)")
 
-.PHONY: help prepare repositories patch-unmixx-requirements dependencies download-game-model run-duet duet run-full full run-choir-parts choir-parts run-midi midi run-singing-midi singing-midi run-polyphonic-choir-midi polyphonic-choir-midi
+.PHONY: help prepare prepare-game-midi repositories patch-unmixx-requirements dependencies game-dependencies download-game-model run-duet duet run-full full run-choir-parts choir-parts run-midi midi run-singing-midi singing-midi run-polyphonic-choir-midi polyphonic-choir-midi
 
 help:
-	@echo "make prepare    Update upstream repositories, install runtime requirements, and update GAME Large ($(RESOLVED_PACKAGE_MANAGER))."
+	@echo "make prepare    Update separation repositories and install only separation runtime requirements ($(RESOLVED_PACKAGE_MANAGER))."
+	@echo "make prepare-game-midi  Additionally install GAME and download its current MIDI model."
 	@echo "make run-duet   Prepare the environment and run the duet pipeline."
 	@echo "make run-full   Prepare the environment and run the full lead/choir/duet pipeline."
 	@echo "make run-choir-parts CHOIR_INPUT=...  Split an existing 01_choir_backing.wav into vocal-ensemble parts."
 	@echo "make run-midi MIDI_INPUT=...  Create MIDI from isolated lead or choir-part stems with GAME Large."
 	@echo "make run-polyphonic-choir-midi MIDI_INPUT=...  Create one polyphonic MIDI from an unseparated choir mix."
 
-prepare: repositories patch-unmixx-requirements dependencies download-game-model
+prepare: repositories patch-unmixx-requirements dependencies
+
+prepare-game-midi: prepare game-dependencies download-game-model
 
 repositories:
 	@mkdir -p "$(THIRD_PARTY)"
@@ -112,8 +115,10 @@ dependencies: patch-unmixx-requirements requirements.txt pyproject.toml
 	$(PREPARE_ENVIRONMENT)
 	$(INSTALL_UNMIXX_REQUIREMENTS)
 	$(INSTALL_MSS_REQUIREMENTS)
-	$(INSTALL_REQUIREMENTS) "$(GAME_REPO)/requirements.txt"
 	$(INSTALL_REQUIREMENTS) requirements.txt
+
+game-dependencies: repositories
+	$(INSTALL_REQUIREMENTS) "$(GAME_REPO)/requirements.txt"
 
 download-game-model: repositories download_game_model.py
 	$(RUN_PYTHON) download_game_model.py --output-dir "$(GAME_MODEL_DIR)" --upgrade
@@ -147,7 +152,7 @@ run-choir-parts choir-parts: prepare
 
 run-midi midi: run-singing-midi
 
-run-singing-midi singing-midi: prepare
+run-singing-midi singing-midi: prepare-game-midi
 	@test -n "$(MIDI_INPUT)" || (echo "Set MIDI_INPUT to an isolated singing file or directory of stems." >&2; exit 2)
 	$(RUN_PYTHON) game_to_midi.py "$(MIDI_INPUT)" --output-dir "$(MIDI_OUTPUT_DIR)" --game-repo "$(GAME_REPO)" --model-dir "$(GAME_MODEL_DIR)" --batch-size "$(MIDI_BATCH_SIZE)" --tempo "$(MIDI_TEMPO)" $(GAME_LANGUAGE_FLAG) $(GAME_GLOB_FLAG)
 
