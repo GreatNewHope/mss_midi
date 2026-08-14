@@ -446,6 +446,82 @@ are musical-part estimates, not reliable individual-singer identities; audition
 them before using them in production. The jaCappella model card directs users
 to the dataset license, so review it before use.
 
+# MIDI transcription
+
+MIDI transcription is a separate branch: it never runs, modifies, or feeds
+back into any audio separator. There are two deliberately different routes.
+
+## Isolated lead and choir-part stems: GAME Large
+
+Use [GAME](https://github.com/openvpi/GAME), the current successor to SOME, for
+an individual lead singer or an already-separated musical choir part. GAME is
+specifically designed for singing-to-MIDI extraction and its authors document
+robustness to separated vocals, noise, reverb, and accompaniment. `make
+prepare` updates GAME from its default branch, installs its current upstream
+requirements, and downloads the largest compatible model bundle from the newest
+official release that supports GAME's Python `infer.py` route into
+`third_party/GAME-model-large`. GAME's latest release may contain ONNX-only
+models; upstream explicitly does not provide Python ONNX inference, so those
+assets are deliberately not selected.
+
+```text
+03_singer_01.wav ─┐
+04_singer_02.wav ─┼──> GAME Large ──> one MIDI file per input stem
+SATB part stem  ──┘
+```
+
+For Falling Slowly, transcribe both isolated lead-singer files in one command:
+
+```bash
+make run-midi \
+  MIDI_INPUT=run_falling_slowly/final \
+  MIDI_GLOB='0[3-4]_singer_*.wav' \
+  MIDI_OUTPUT_DIR=run_falling_slowly/midi \
+  MIDI_LANGUAGE=en
+```
+
+For Bad Idea's separated choir parts, run GAME on each melodic file. Do not
+transcribe `01_vocal_percussion.wav` as pitched MIDI:
+
+```bash
+make run-midi \
+  MIDI_INPUT=songs/BadIdea/choir_parts \
+  MIDI_GLOB='0[2-6]_*.wav' \
+  MIDI_OUTPUT_DIR=songs/BadIdea/choir_midi
+```
+
+Each invocation writes a `manifest.json` with the current checkpoint path,
+GAME repository, input, language, and resulting MIDI files. `MIDI_LANGUAGE`
+is optional; GAME's released language-aware models list `en`, `ja`, `yue`, and
+`zh`. The model downloader intentionally follows the newest compatible GAME
+release, not a pinned revision, matching this project's update policy.
+
+GAME's published model files use **CC BY-NC-SA 4.0**. Review that license
+before any commercial use. The code follows the upstream repository's MIT
+license, but that does not change the model-files license.
+
+## Unseparated choir mix: Basic Pitch fallback
+
+If you intentionally keep a choir as one mixed stem, use the separate
+polyphonic Basic Pitch route:
+
+```bash
+make run-polyphonic-choir-midi \
+  MIDI_INPUT=run_song/final/01_choir_backing.wav \
+  MIDI_OUTPUT_DIR=run_song/choir_polyphonic_midi
+```
+
+[Basic Pitch](https://github.com/spotify/basic-pitch) supports polyphonic note
+estimation and is the practical fallback for this case, but its MIDI is one
+unassigned collection of notes: it cannot reliably turn a mixed choir into
+separate SATB or singer tracks. Use DPTNet followed by GAME when separate
+part-level MIDI is the goal. Basic Pitch currently documents Python 3.7–3.11
+support; use Python 3.10 or 3.11 for this fallback route.
+
+Both routes estimate notes and timing, not lyrics or singer identity. Treat the
+output as editable MIDI; review sustained notes, re-attacks, vocal slides, and
+closely voiced harmony in a DAW or notation editor.
+
 # Troubleshooting
 
 ## Mega53 runs out of VRAM
