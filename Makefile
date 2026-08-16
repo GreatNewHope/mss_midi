@@ -51,10 +51,8 @@ endif
 
 ifeq ($(UNMIXX_REQUIREMENTS_MODE),runtime)
 # UNMIXX's upstream requirements.txt is a frozen author workstation export.
-# The bundled runner imports only torch, torchaudio, PyYAML, NumPy, asteroid,
-# and the repository-local look2hear package; these are installed through this
-# project requirements or the model runtimes below.
-INSTALL_UNMIXX_REQUIREMENTS = @echo "Skipping UNMIXX's full frozen requirements export; using the runtime dependencies already installed by this project."
+# Runtime mode installs only the curated inference dependencies we need.
+INSTALL_UNMIXX_REQUIREMENTS = $(INSTALL_REQUIREMENTS) requirements-unmixx-runtime.txt
 else ifeq ($(UNMIXX_REQUIREMENTS_MODE),full)
 INSTALL_UNMIXX_REQUIREMENTS = $(INSTALL_REQUIREMENTS) "$(UNMIXX_REPO)/requirements.txt"
 else
@@ -116,7 +114,7 @@ repositories:
 patch-unmixx-requirements: repositories patch_unmixx_requirements.py
 	$(RUN_PYTHON) patch_unmixx_requirements.py "$(UNMIXX_REPO)"
 
-dependencies: patch-unmixx-requirements requirements.txt pyproject.toml
+dependencies: patch-unmixx-requirements requirements.txt requirements-unmixx-runtime.txt pyproject.toml
 	$(PREPARE_ENVIRONMENT)
 	$(INSTALL_UNMIXX_REQUIREMENTS)
 	$(INSTALL_MSS_REQUIREMENTS)

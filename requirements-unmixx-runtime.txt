@@ -1,0 +1,14 @@
+# UNMIXX inference-time third-party imports from the model entrypoint
+# (look2hear.models -> UNMIXX and transitive layer/utils modules).
+numpy
+packaging
+librosa
+torch-complex
+typeguard
+rich
+matplotlib
+pandas
+praat-parselmouth
+# espnet
+pytorch-lightning
+rich
