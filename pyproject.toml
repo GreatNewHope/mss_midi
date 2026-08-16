@@ -17,7 +17,10 @@ dependencies = [
 ]
 
 [tool.setuptools]
-# This repository intentionally provides standalone scripts, not an importable
-# Python package. Prevent setuptools from treating Colab data directories as
-# distributable packages during `uv sync`.
 py-modules = []
+
+[tool.uv]
+package = false
+index-url = "https://pypi.org/simple"
+extra-index-url = []
+index-strategy = "first-index"

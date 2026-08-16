@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/choir-separator-project.iml" filepath="$PROJECT_DIR$/.idea/choir-separator-project.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/music-source-separation-training.iml" filepath="$PROJECT_DIR$/.idea/music-source-separation-training.iml" />
     </modules>
   </component>
 </project>
