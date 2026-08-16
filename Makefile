@@ -171,3 +171,6 @@ run-polyphonic-choir-midi polyphonic-choir-midi: prepare-polyphonic-choir-midi
 	@test -n "$(MIDI_INPUT)" || (echo "Set MIDI_INPUT to a non-separated choir mix or directory." >&2; exit 2)
 	$(RUN_PYTHON) audio_to_midi.py "$(MIDI_INPUT)" \
 		--output-dir "$(MIDI_OUTPUT_DIR)"
+
+clean:
+	rm -rf *.egg-info

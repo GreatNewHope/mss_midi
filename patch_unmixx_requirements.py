@@ -67,7 +67,7 @@ def main() -> None:
 '''
     if upstream_import in original_model:
         model_file.write_text(
-            original_model.replace(upstream_import, local_implementation, count=1),
+            original_model.replace(upstream_import, local_implementation, 1),
             encoding="utf-8",
         )
         print(f"Replaced UNMIXX's Asteroid-only pad helper in {model_file}.")

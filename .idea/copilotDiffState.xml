@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CopilotDiffPersistence">
+    <option name="pendingDiffs">
+      <map>
+        <entry key="/pyproject (snapshot).toml">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="/pyproject (snapshot).toml" />
+              <option name="originalContent" value="[build-system]&#10;requires = [&quot;setuptools&gt;=66.1&quot;]&#10;build-backend = &quot;setuptools.build_meta&quot;&#10;&#10;[project]&#10;name = &quot;choir-separator-project&quot;&#10;version = &quot;0.1.0&quot;&#10;requires-python = &quot;&gt;=3.10, &lt;3.13&quot;&#10;dynamic = [&quot;dependencies&quot;]&#10;&#10;[tool.setuptools]&#10;# This repository intentionally provides standalone scripts, not an importable&#10;# Python package. Prevent setuptools from treating Colab data directories as&#10;# distributable packages during `uv sync`.&#10;py-modules = []&#10;&#10;[tool.setuptools.dynamic]&#10;dependencies = { file = [&quot;requirements.txt&quot;] }&#10;" />
+              <option name="updatedContent" value="[build-system]&#10;requires = [&quot;setuptools&gt;=66.1&quot;]&#10;build-backend = &quot;setuptools.build_meta&quot;&#10;&#10;[project]&#10;name = &quot;choir-separator-project&quot;&#10;version = &quot;0.1.0&quot;&#10;requires-python = &quot;&gt;=3.10, &lt;3.13&quot;&#10;dependencies = [&#10;&#9;&quot;huggingface-hub&quot;,&#10;&#9;&quot;melband-roformer-infer&quot;,&#10;&#9;&quot;PyYAML&quot;,&#10;&#9;&quot;torch&quot;,&#10;&#9;&quot;torchaudio&quot;,&#10;]&#10;&#10;[tool.setuptools]&#10;# This repository intentionally provides standalone scripts, not an importable&#10;# Python package. Prevent setuptools from treating Colab data directories as&#10;# distributable packages during `uv sync`.&#10;py-modules = []&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>

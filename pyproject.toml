@@ -6,13 +6,18 @@ build-backend = "setuptools.build_meta"
 name = "choir-separator-project"
 version = "0.1.0"
 requires-python = ">=3.10, <3.13"
-dynamic = ["dependencies"]
+dependencies = [
+	"huggingface-hub",
+	"ipykernel>=7.3.0",
+	"melband-roformer-infer",
+	"PyYAML",
+	"torch",
+	"torchaudio",
+	"ipykernel"
+]
 
 [tool.setuptools]
 # This repository intentionally provides standalone scripts, not an importable
 # Python package. Prevent setuptools from treating Colab data directories as
 # distributable packages during `uv sync`.
 py-modules = []
-
-[tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
