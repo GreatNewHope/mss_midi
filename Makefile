@@ -30,6 +30,10 @@ MIDI_BATCH_SIZE ?= 4
 MIDI_TEMPO ?= 120
 MIDI_GLOB ?=
 
+UV_INDEX_STRATEGY=first-index
+UV_INDEX_URL=https://pypi.org/simple
+UV_EXTRA_INDEX_URL=
+
 UV_AVAILABLE := $(shell command -v $(UV) >/dev/null 2>&1 && printf uv || printf pip)
 ifeq ($(PACKAGE_MANAGER),auto)
 RESOLVED_PACKAGE_MANAGER := $(UV_AVAILABLE)

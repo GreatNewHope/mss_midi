@@ -12,3 +12,4 @@ praat-parselmouth
 # espnet
 pytorch-lightning
 rich
+torchcodec
