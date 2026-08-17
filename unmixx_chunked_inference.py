@@ -19,6 +19,24 @@ import torchaudio
 import yaml
 
 
+def mps_available() -> bool:
+    return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+
+
+def resolve_device(name: str) -> torch.device:
+    if name == "auto":
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        if mps_available():
+            return torch.device("mps")
+        return torch.device("cpu")
+    if name == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("--device cuda was requested, but CUDA is not available")
+    if name == "mps" and not mps_available():
+        raise RuntimeError("--device mps was requested, but Metal Performance Shaders is not available")
+    return torch.device(name)
+
+
 def load_config(path: Path) -> dict:
     with path.open("r") as f:
         return yaml.safe_load(f)
@@ -109,7 +127,7 @@ def main() -> None:
     p.add_argument("--ckpt-path", type=Path, required=True)
     p.add_argument("--audio-path", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
-    p.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    p.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     p.add_argument("--chunk-seconds", type=float, default=4.0)
     p.add_argument("--overlap-seconds", type=float, default=1.0)
     args = p.parse_args()
@@ -119,10 +137,7 @@ def main() -> None:
     if args.overlap_seconds < 0 or args.overlap_seconds >= args.chunk_seconds:
         p.error("--overlap-seconds must be >= 0 and < --chunk-seconds")
 
-    if args.device == "auto":
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        device = torch.device(args.device)
+    device = resolve_device(args.device)
 
     cfg = load_config(args.conf_path)
     models_module = import_unmixx(args.unmixx_repo.resolve())

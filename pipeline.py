@@ -21,6 +21,7 @@ already a vocal-only stem.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -29,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from huggingface_hub import hf_hub_download
+import torch
 
 
 MEGA53_REPO_ID = "oulianov/mvsep_mega_53"
@@ -46,9 +48,30 @@ class PipelineOutputs:
     singer_02: Path | None = None
 
 
-def run(cmd: list[str], *, cwd: Path | None = None) -> None:
+def run(
+    cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None
+) -> None:
     print("+", " ".join(str(x) for x in cmd))
-    subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
+    subprocess.run(cmd, cwd=str(cwd) if cwd else None, env=env, check=True)
+
+
+def mps_available() -> bool:
+    return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+
+
+def resolve_device(name: str) -> str:
+    """Select CUDA, then MPS, then CPU for automatic execution."""
+    if name == "auto":
+        if torch.cuda.is_available():
+            return "cuda"
+        if mps_available():
+            return "mps"
+        return "cpu"
+    if name == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("--device cuda was requested, but CUDA is not available")
+    if name == "mps" and not mps_available():
+        raise RuntimeError("--device mps was requested, but Metal Performance Shaders is not available")
+    return name
 
 
 def require_ffmpeg() -> None:
@@ -154,6 +177,7 @@ def separate_lead_and_backing_mega53(
     mss_repo: Path | None,
     cache_dir: Path,
     python_executable: str,
+    device: str,
 ) -> tuple[Path, Path]:
     """Run Mega53 and return (lead-vocal/foreground, back-vocal/choir)."""
     repo = validate_mss_repo(mss_repo)
@@ -165,7 +189,7 @@ def separate_lead_and_backing_mega53(
         staged = in_dir / "all_vocals.wav"
         shutil.copy2(vocals_wav, staged)
 
-        run([
+        cmd = [
             python_executable,
             str(repo / "inference.py"),
             "--model_type", "bs_roformer",
@@ -173,7 +197,14 @@ def separate_lead_and_backing_mega53(
             "--start_check_point", str(checkpoint),
             "--input_folder", str(in_dir),
             "--store_dir", str(output_dir),
-        ], cwd=repo)
+        ]
+        if device == "cpu":
+            cmd.append("--force_cpu")
+        env = os.environ.copy()
+        if device == "mps":
+            # Mega53 selects CUDA before MPS; hide CUDA for this explicit MPS request.
+            env["CUDA_VISIBLE_DEVICES"] = ""
+        run(cmd, cwd=repo, env=env)
 
     lead = find_unique_stem(output_dir, "lead-vocal")
     backing = find_unique_stem(output_dir, "back-vocal")
@@ -236,13 +267,9 @@ def separate_duet_unmixx(
 
 
 def unmixx_device(device: str) -> str:
-    if device == "auto":
-        return "auto"
-    if device.startswith("cuda"):
-        return "cuda"
-    if device == "cpu":
-        return "cpu"
-    raise ValueError("UNMIXX supports device auto, cpu, or cuda (cuda:N is mapped to cuda).")
+    if device in {"auto", "cpu", "cuda", "mps"}:
+        return device
+    raise ValueError("UNMIXX supports device auto, cpu, cuda, or mps.")
 
 
 def find_unique_stem(root: Path, token: str, *, reject: tuple[str, ...] = ()) -> Path:
@@ -315,6 +342,7 @@ def run_pipeline(args: argparse.Namespace) -> PipelineOutputs:
             args.mss_repo,
             cache / "mega53",
             args.python,
+            args.device,
         )
     else:
         print("[Stage 2] SKIPPED: no backing-choir split requested")
@@ -402,8 +430,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--device",
+        choices=("auto", "cpu", "cuda", "mps"),
         default="auto",
-        help="auto, cuda, cuda:0, or cpu. Stage 3 maps cuda:N to cuda.",
+        help="Execution device: auto selects CUDA, then MPS, then CPU.",
     )
     p.add_argument(
         "--unmixx-chunk-seconds",
@@ -442,6 +471,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     validate_args(parser, args)
+    args.device = resolve_device(args.device)
 
     outputs = run_pipeline(args)
     print("\nDone. Final outputs:")

@@ -66,7 +66,7 @@ Always keep the intermediate stems so you can diagnose which stage caused an err
 
 # Installation
 
-A CUDA-capable NVIDIA GPU is strongly recommended. Mega53 is particularly memory-intensive; its upstream release recommends around 16 GB VRAM or more.
+A CUDA-capable NVIDIA GPU is strongly recommended. Mega53 is particularly memory-intensive; its upstream release recommends around 16 GB VRAM or more. Every pipeline accepts `--device` (or Make's `DEVICE` / `CHOIR_DEVICE`) as `cuda`, `mps`, `cpu`, or `auto`; `auto` selects CUDA first, then MPS (Apple Metal), then CPU.
 
 ## 1. ffmpeg
 
@@ -150,7 +150,7 @@ python pipeline.py song.mp3 \
   --mode full \
   --mss-repo third_party/Music-Source-Separation-Training \
   --unmixx-repo third_party/unmixx \
-  --device cuda \
+  --device auto \
   --output-dir run_song
 ```
 
@@ -161,7 +161,7 @@ Flow: `mix -> all vocals -> foreground/choir -> singer 1/singer 2`.
 Use this when the vocal stem is essentially just two foreground singers. Mega53 is skipped completely:
 
 ```bash
-make run-duet INPUT=duet_song.mp3 OUTPUT_DIR=run_duet DEVICE=cuda
+make run-duet INPUT=duet_song.mp3 OUTPUT_DIR=run_duet DEVICE=auto
 ```
 
 Flow: `mix -> all vocals -> singer 1/singer 2`. No `--mss-repo` is needed.
@@ -174,7 +174,7 @@ Use this when there is one principal singer plus backing/ensemble vocals. UNMIXX
 python pipeline.py lead_and_choir.mp3 \
   --mode lead-choir \
   --mss-repo third_party/Music-Source-Separation-Training \
-  --device cuda \
+  --device auto \
   --output-dir run_lead_choir
 ```
 
@@ -189,7 +189,7 @@ python pipeline.py already_isolated_vocals.wav \
   --mode duet \
   --input-is-vocals \
   --unmixx-repo third_party/unmixx \
-  --device cuda \
+  --device auto \
   --output-dir run_existing_vocals
 ```
 
@@ -438,7 +438,7 @@ Run it with:
 make run-choir-parts \
   CHOIR_INPUT=run_song/final/01_choir_backing.wav \
   CHOIR_OUTPUT_DIR=run_song/choir_parts \
-  CHOIR_DEVICE=cuda
+  CHOIR_DEVICE=auto
 ```
 
 The checkpoint selection is deliberate. SepACap reports the highest published

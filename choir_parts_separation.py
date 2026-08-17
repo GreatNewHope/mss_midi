@@ -27,9 +27,15 @@ CONFIG_NAME = "conf.yml"
 
 def resolve_device(name: str) -> torch.device:
     if name == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return torch.device("mps")
+        return torch.device("cpu")
     if name == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("--device cuda was requested, but CUDA is not available")
+    if name == "mps" and not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
+        raise RuntimeError("--device mps was requested, but Metal Performance Shaders is not available")
     return torch.device(name)
 
 
@@ -116,7 +122,7 @@ def main() -> None:
     )
     parser.add_argument("input", type=Path, help="Backing-vocal WAV, e.g. 01_choir_backing.wav")
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     parser.add_argument("--cache-dir", type=Path, default=Path(".model_cache/jacappella"))
     parser.add_argument("--segment-seconds", type=float, default=None)
     parser.add_argument("--overlap-seconds", type=float, default=0.5)

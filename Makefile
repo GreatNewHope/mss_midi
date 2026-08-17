@@ -1,6 +1,6 @@
 # Prefers uv locally and falls back to pip when uv is unavailable (for example,
 # in Colab). Override values as needed, e.g.:
-# make run-duet INPUT=/path/to/song.flac DEVICE=cuda:0
+# make run-duet INPUT=/path/to/song.flac DEVICE=mps
 
 UV ?= uv
 PYTHON ?= python3
@@ -15,7 +15,7 @@ MSS_REQUIREMENTS_MODE ?= runtime
 
 INPUT ?= songs/FallingSlowly/01 - Falling Slowly.flac
 OUTPUT_DIR ?= run_song
-DEVICE ?= cuda
+DEVICE ?= auto
 UNMIXX_CHUNK_SECONDS ?= 4
 UNMIXX_OVERLAP_SECONDS ?= 1
 CHOIR_INPUT ?=
