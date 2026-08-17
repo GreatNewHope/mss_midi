@@ -65,9 +65,9 @@ endif
 
 ifeq ($(MSS_REQUIREMENTS_MODE),runtime)
 # Music-Source-Separation-Training's requirements also include training tools,
-# GUI packages, and optional CUDA kernels. Mega53 inference relies on the
-# runtime packages installed by this project and melband-roformer-infer.
-INSTALL_MSS_REQUIREMENTS = @echo "Skipping Music-Source-Separation-Training's full training requirements; using the runtime dependencies already installed by this project."
+# GUI packages, and optional CUDA kernels. Runtime mode installs only the
+# curated Mega53 / bs_roformer inference dependencies we actually need.
+INSTALL_MSS_REQUIREMENTS = $(INSTALL_REQUIREMENTS) requirements-mss-runtime.txt
 else ifeq ($(MSS_REQUIREMENTS_MODE),full)
 INSTALL_MSS_REQUIREMENTS = $(INSTALL_REQUIREMENTS) "$(MSS_REPO)/requirements.txt"
 else
@@ -118,7 +118,7 @@ repositories:
 patch-unmixx-requirements: repositories patch_unmixx_requirements.py
 	$(RUN_PYTHON) patch_unmixx_requirements.py "$(UNMIXX_REPO)"
 
-dependencies: patch-unmixx-requirements requirements.txt requirements-unmixx-runtime.txt pyproject.toml
+dependencies: patch-unmixx-requirements requirements.txt requirements-unmixx-runtime.txt requirements-mss-runtime.txt pyproject.toml
 	$(PREPARE_ENVIRONMENT)
 	$(INSTALL_UNMIXX_REQUIREMENTS)
 	$(INSTALL_MSS_REQUIREMENTS)

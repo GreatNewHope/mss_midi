@@ -9,6 +9,5 @@ rich
 matplotlib
 pandas
 praat-parselmouth
-# espnet
 pytorch-lightning
 rich
