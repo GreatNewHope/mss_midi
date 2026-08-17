@@ -267,7 +267,13 @@ def separate_duet_unmixx(
 
 
 def unmixx_device(device: str) -> str:
-    if device in {"auto", "cpu", "cuda", "mps"}:
+    """Choose a UNMIXX-compatible device without changing other stages."""
+    if device == "auto":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "mps":
+        print("[UNMIXX] Warning: MPS is unsupported; falling back to CPU.", file=sys.stderr)
+        return "cpu"
+    if device in {"cpu", "cuda"}:
         return device
     raise ValueError("UNMIXX supports device auto, cpu, cuda, or mps.")
 
@@ -357,7 +363,7 @@ def run_pipeline(args: argparse.Namespace) -> PipelineOutputs:
             stage3 / "raw_unmixx",
             args.unmixx_repo,
             args.python,
-            args.device,
+            args.unmixx_device,
             args.unmixx_chunk_seconds,
             args.unmixx_overlap_seconds,
         )
@@ -471,6 +477,9 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     validate_args(parser, args)
+    # Resolve this before the general device selection so UNMIXX can keep its
+    # own CUDA-or-CPU auto policy while the rest of the pipeline can use MPS.
+    args.unmixx_device = unmixx_device(args.device)
     args.device = resolve_device(args.device)
 
     outputs = run_pipeline(args)

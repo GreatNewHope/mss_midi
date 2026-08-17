@@ -21,21 +21,16 @@ import yaml
 from audio_io import load_audio, save_wav
 
 
-def mps_available() -> bool:
-    return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-
-
 def resolve_device(name: str) -> torch.device:
     if name == "auto":
         if torch.cuda.is_available():
             return torch.device("cuda")
-        if mps_available():
-            return torch.device("mps")
         return torch.device("cpu")
     if name == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("--device cuda was requested, but CUDA is not available")
-    if name == "mps" and not mps_available():
-        raise RuntimeError("--device mps was requested, but Metal Performance Shaders is not available")
+    if name == "mps":
+        print("[UNMIXX] Warning: MPS is unsupported; falling back to CPU.", file=sys.stderr)
+        return torch.device("cpu")
     return torch.device(name)
 
 
