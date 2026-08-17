@@ -11,6 +11,7 @@ dependencies = [
 	"ipykernel>=7.3.0",
 	"melband-roformer-infer",
 	"PyYAML",
+	"soundfile",
 	"torch",
 	"torchaudio",
 	"ipykernel"

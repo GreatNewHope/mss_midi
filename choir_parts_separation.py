@@ -19,6 +19,8 @@ import yaml
 from asteroid.models import DPTNet
 from huggingface_hub import hf_hub_download
 
+from audio_io import load_audio, save_wav
+
 
 MODEL_REPO = "jaCappella/DPTNet_jaCappella_VES_48k"
 CHECKPOINT_NAME = "best_model.pth"
@@ -139,7 +141,7 @@ def main() -> None:
     if segment_seconds <= args.overlap_seconds:
         parser.error("--segment-seconds must be greater than --overlap-seconds")
 
-    waveform, input_rate = torchaudio.load(str(args.input))
+    waveform, input_rate = load_audio(args.input)
     if waveform.shape[0] > 1:
         waveform = waveform.mean(dim=0, keepdim=True)
     if input_rate != target_rate:
@@ -163,7 +165,7 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for index, source in enumerate(sources, start=1):
         destination = args.output_dir / f"{index:02d}_{source}.wav"
-        torchaudio.save(str(destination), estimates[index - 1 : index], target_rate)
+        save_wav(destination, estimates[index - 1 : index], target_rate)
         print(f"[Save] {destination}")
 
     manifest = {

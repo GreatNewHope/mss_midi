@@ -70,7 +70,7 @@ A CUDA-capable NVIDIA GPU is strongly recommended. Mega53 is particularly memory
 
 ## 1. ffmpeg
 
-Install `ffmpeg` and make sure it is on `PATH`.
+Install `ffmpeg` and make sure it is on `PATH`. The internal WAV I/O uses `soundfile`, so it does not depend on TorchCodec finding FFmpeg's shared libraries.
 
 ## 2. Prepare the environment
 

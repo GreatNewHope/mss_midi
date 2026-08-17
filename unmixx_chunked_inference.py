@@ -18,6 +18,8 @@ import torch
 import torchaudio
 import yaml
 
+from audio_io import load_audio, save_wav
+
 
 def mps_available() -> bool:
     return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
@@ -143,7 +145,7 @@ def main() -> None:
     models_module = import_unmixx(args.unmixx_repo.resolve())
     model, target_sr = build_model(models_module, cfg, args.ckpt_path, device)
 
-    waveform, sr = torchaudio.load(str(args.audio_path))
+    waveform, sr = load_audio(args.audio_path)
     if sr != target_sr:
         waveform = torchaudio.functional.resample(waveform, sr, target_sr)
         sr = target_sr
@@ -225,8 +227,8 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     spk1 = args.output_dir / "spk1.wav"
     spk2 = args.output_dir / "spk2.wav"
-    torchaudio.save(str(spk1), result[0:1], sr)
-    torchaudio.save(str(spk2), result[1:2], sr)
+    save_wav(spk1, result[0:1], sr)
+    save_wav(spk2, result[1:2], sr)
     print(f"[Save] {spk1}")
     print(f"[Save] {spk2}")
 

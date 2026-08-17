@@ -205,6 +205,7 @@ dependencies = [
     { name = "ipykernel" },
     { name = "melband-roformer-infer" },
     { name = "pyyaml" },
+    { name = "soundfile" },
     { name = "torch" },
     { name = "torchaudio" },
 ]
@@ -216,6 +217,7 @@ requires-dist = [
     { name = "ipykernel", specifier = ">=7.3.0" },
     { name = "melband-roformer-infer" },
     { name = "pyyaml" },
+    { name = "soundfile" },
     { name = "torch" },
     { name = "torchaudio" },
 ]
