@@ -6,15 +6,60 @@ build-backend = "setuptools.build_meta"
 name = "choir-separator-project"
 version = "0.1.0"
 requires-python = ">=3.10, <3.13"
-dependencies = [
+dependencies = []
+
+[dependency-groups]
+core = [
+	# Dependencies used directly by this repository's scripts.
 	"huggingface-hub",
-	"ipykernel>=7.3.0",
 	"melband-roformer-infer",
 	"PyYAML",
 	"soundfile",
 	"torch",
 	"torchaudio",
-	"ipykernel"
+]
+choir-parts = [
+	# Required only by choir_parts_separation.py.
+	"asteroid",
+]
+mss-runtime = [
+	# Music-Source-Separation-Training inference-time imports used by the Mega53
+	# bs_roformer pipeline in this repository. Keep this lean: no training-only,
+	# GUI, or optional CUDA-kernel dependencies.
+	"ml_collections",
+	"omegaconf==2.2.3",
+	"numpy",
+	"scipy",
+	"librosa",
+	"soundfile",
+	"matplotlib",
+	"packaging",
+	"tqdm",
+	"beartype==0.14.1",
+	"einops==0.8.1",
+	"rotary_embedding_torch==0.3.5",
+]
+polyphonic-choir-midi = [
+	# Required only by audio_to_midi.py (the unseparated-choir fallback).
+	"basic-pitch",
+]
+unmixx-runtime = [
+	# UNMIXX inference-time third-party imports from the model entrypoint
+	# (look2hear.models -> UNMIXX and transitive layer/utils modules).
+	"numpy",
+	"packaging",
+	"librosa",
+	"torch-complex",
+	"typeguard",
+	"rich",
+	"matplotlib",
+	"pandas",
+	"praat-parselmouth",
+	"pytorch-lightning",
+	"rich",
+]
+dev = [
+	"ipykernel>=7.3.0",
 ]
 
 [tool.setuptools]
@@ -22,6 +67,7 @@ py-modules = []
 
 [tool.uv]
 package = false
+default-groups = ["core", "dev"]
 index-url = "https://pypi.org/simple"
 extra-index-url = []
 index-strategy = "first-index"
