@@ -1,5 +1,5 @@
 songs
-third_party/
+/third_party/
 *.egg-info
 .venv
 run_*

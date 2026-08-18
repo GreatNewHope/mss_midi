@@ -19,6 +19,9 @@ DEVICE ?= auto
 UNMIXX_CHUNK_SECONDS ?= 4
 UNMIXX_OVERLAP_SECONDS ?= 1
 UNMIXX_SILENCE_THRESHOLD_DB ?= -80
+UNMIXX_IDENTITY_MODEL ?= byol
+UNMIXX_IDENTITY_MIN_PEAK_DB ?= -45
+UNMIXX_IDENTITY_MIN_MARGIN ?= 0.05
 CHOIR_INPUT ?=
 CHOIR_OUTPUT_DIR ?= choir_parts
 CHOIR_DEVICE ?= $(DEVICE)
@@ -145,6 +148,9 @@ run-duet duet: prepare
 		--unmixx-chunk-seconds "$(UNMIXX_CHUNK_SECONDS)" \
 		--unmixx-overlap-seconds "$(UNMIXX_OVERLAP_SECONDS)" \
 		--unmixx-silence-threshold-db "$(UNMIXX_SILENCE_THRESHOLD_DB)" \
+		--unmixx-identity-model "$(UNMIXX_IDENTITY_MODEL)" \
+		--unmixx-identity-min-peak-db "$(UNMIXX_IDENTITY_MIN_PEAK_DB)" \
+		--unmixx-identity-min-margin "$(UNMIXX_IDENTITY_MIN_MARGIN)" \
 		--output-dir "$(OUTPUT_DIR)"
 
 run-full full: prepare
@@ -156,6 +162,9 @@ run-full full: prepare
 		--unmixx-chunk-seconds "$(UNMIXX_CHUNK_SECONDS)" \
 		--unmixx-overlap-seconds "$(UNMIXX_OVERLAP_SECONDS)" \
 		--unmixx-silence-threshold-db "$(UNMIXX_SILENCE_THRESHOLD_DB)" \
+		--unmixx-identity-model "$(UNMIXX_IDENTITY_MODEL)" \
+		--unmixx-identity-min-peak-db "$(UNMIXX_IDENTITY_MIN_PEAK_DB)" \
+		--unmixx-identity-min-margin "$(UNMIXX_IDENTITY_MIN_MARGIN)" \
 		--output-dir "$(OUTPUT_DIR)"
 
 run-choir-parts choir-parts: prepare-choir-parts

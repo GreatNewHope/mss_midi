@@ -51,6 +51,8 @@ ckpt/best.ckpt
 
 The project uses the official UNMIXX model/checkpoint but runs it through the bundled `unmixx_chunked_inference.py` helper. The upstream `inference.py` forwards the entire WAV in one call, which can exhaust GPU memory on full songs. The helper loads the model once, runs short overlapping windows, skips windows with a peak at or below -80 dBFS, aligns the two output permutations between neighbouring chunks, and overlap-adds them into full-length stems. Set `--unmixx-silence-threshold-db -inf` (or `UNMIXX_SILENCE_THRESHOLD_DB=-inf` with `make`) to skip only exact digital silence.
 
+By default, Stage 3 also downloads Sony CSL's BYOL singer-identity TorchScript checkpoint from Hugging Face on its first run. It maintains a conservative, normalized identity prototype for each output track. When overlap audio is silent or its keep/swap result is ambiguous, the chunker compares each new separated stem to those two prototypes and assigns the higher-scoring permutation. Only confidently assigned, sufficiently voiced stems update a prototype. Disable this with `--unmixx-identity-model none` (or `UNMIXX_IDENTITY_MODEL=none` with `make`).
+
 ## Important interpretation of Stage 2
 
 For this pipeline we assume Mega53 behaves like it did on the successful test song:
@@ -277,7 +279,7 @@ Those operations can remove cues that help distinguish the two singers.
 
 UNMIXX's published training config uses 4-second segments. The project now uses **4-second chunks with 1-second overlap by default**. This prevents full-song attention tensors from exhausting GPU memory and is closer to the model's training regime.
 
-The chunker also compares the overlapping tails/heads of both estimated sources and chooses the source permutation that maximizes continuity before overlap-adding the chunks. This greatly reduces `singer_01` / `singer_02` swaps at chunk boundaries, although identity can still become ambiguous after long silences.
+The chunker compares the overlapping tails/heads of both estimated sources and chooses the source permutation that maximizes continuity before overlap-adding the chunks. When that evidence is absent or ambiguous—most importantly after silence—it falls back to the BYOL singer-identity prototype tracker. This greatly reduces `singer_01` / `singer_02` swaps at chunk boundaries, although identity can still become ambiguous when separation is leaky or the embedding scores are too close.
 
 # Roadmap
 

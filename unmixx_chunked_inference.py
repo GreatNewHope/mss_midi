@@ -18,6 +18,7 @@ from pathlib import Path
 import torch
 import torchaudio
 import yaml
+from huggingface_hub import hf_hub_download
 
 from audio_io import load_audio, save_wav
 
@@ -123,6 +124,83 @@ def is_silent(waveform: torch.Tensor, peak_threshold: float) -> bool:
     return bool(waveform.abs().amax() <= peak_threshold)
 
 
+class SingerIdentityTracker:
+    """Assign UNMIXX's permutation-ambiguous outputs to persistent tracks.
+
+    The BYOL encoder was trained for singer identity, independently from
+    UNMIXX.  Its TorchScript export keeps this runner independent of the
+    original research repository and its training-time dependencies.
+    """
+
+    REPO_ID = "BernardoTorres/singer-identity"
+
+    def __init__(
+        self,
+        model_name: str,
+        device: torch.device,
+        input_sr: int,
+        min_peak: float,
+        min_margin: float,
+    ) -> None:
+        model_path = hf_hub_download(
+            repo_id=self.REPO_ID,
+            filename=f"{model_name}/model.ts",
+        )
+        self.model = torch.jit.load(model_path, map_location=device).eval()
+        self.device = device
+        self.input_sr = input_sr
+        self.min_peak = min_peak
+        self.min_margin = min_margin
+        self.prototypes: list[torch.Tensor | None] = [None, None]
+        self.counts = [0, 0]
+
+    def embeddings(self, estimates: torch.Tensor) -> list[torch.Tensor | None]:
+        """Return one normalized singer embedding per sufficiently voiced stem."""
+        valid = estimates.abs().amax(dim=1) > self.min_peak
+        if not bool(valid.any()):
+            return [None, None]
+
+        audio = estimates[valid]
+        if self.input_sr != 44_100:
+            audio = torchaudio.functional.resample(audio, self.input_sr, 44_100)
+        with torch.inference_mode():
+            vectors = self.model(audio.to(self.device, non_blocking=True)).float().cpu()
+        vectors = torch.nn.functional.normalize(vectors, dim=1)
+
+        result: list[torch.Tensor | None] = [None, None]
+        for source_index, vector in zip(valid.nonzero(as_tuple=False).flatten().tolist(), vectors):
+            result[source_index] = vector
+        return result
+
+    def decide(self, vectors: list[torch.Tensor | None]) -> tuple[bool, float, float] | None:
+        """Return (swap, keep score, swap score), if both tracks have evidence."""
+        if any(vector is None for vector in vectors) or any(proto is None for proto in self.prototypes):
+            return None
+        assert vectors[0] is not None and vectors[1] is not None
+        assert self.prototypes[0] is not None and self.prototypes[1] is not None
+        keep = float(torch.dot(self.prototypes[0], vectors[0]) + torch.dot(self.prototypes[1], vectors[1]))
+        swap = float(torch.dot(self.prototypes[0], vectors[1]) + torch.dot(self.prototypes[1], vectors[0]))
+        if abs(swap - keep) < self.min_margin:
+            return None
+        return swap > keep, keep, swap
+
+    def update(self, vectors: list[torch.Tensor | None]) -> None:
+        """Update only the prototype belonging to a voiced, assigned stem."""
+        for track, vector in enumerate(vectors):
+            if vector is None:
+                continue
+            prototype = self.prototypes[track]
+            # A capped running mean avoids one early chunk dominating forever,
+            # while retaining enough inertia to bridge a long silence.
+            weight = 1.0 / min(self.counts[track] + 1, 8)
+            if prototype is None:
+                updated = vector
+            else:
+                updated = torch.nn.functional.normalize((1.0 - weight) * prototype + weight * vector, dim=0)
+            self.prototypes[track] = updated
+            self.counts[track] += 1
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Chunked long-form inference for the official UNMIXX model")
     p.add_argument("--unmixx-repo", type=Path, required=True)
@@ -133,6 +211,24 @@ def main() -> None:
     p.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     p.add_argument("--chunk-seconds", type=float, default=4.0)
     p.add_argument("--overlap-seconds", type=float, default=1.0)
+    p.add_argument(
+        "--identity-model",
+        choices=("none", "byol", "contrastive", "contrastive-vc", "uniformity", "vicreg"),
+        default="byol",
+        help="Singer-identity encoder used after ambiguous boundaries (default: byol).",
+    )
+    p.add_argument(
+        "--identity-min-peak-db",
+        type=float,
+        default=-45.0,
+        help="Do not learn identity from an estimated stem below this peak level (default: -45 dBFS).",
+    )
+    p.add_argument(
+        "--identity-min-margin",
+        type=float,
+        default=0.05,
+        help="Minimum singer-identity keep/swap score difference required to decide an ambiguous boundary.",
+    )
     p.add_argument(
         "--silence-threshold-db",
         type=float,
@@ -150,6 +246,10 @@ def main() -> None:
         p.error("--overlap-seconds must be >= 0 and < --chunk-seconds")
     if math.isnan(args.silence_threshold_db) or args.silence_threshold_db > 0:
         p.error("--silence-threshold-db must be <= 0 dBFS")
+    if math.isnan(args.identity_min_peak_db) or args.identity_min_peak_db > 0:
+        p.error("--identity-min-peak-db must be <= 0 dBFS")
+    if args.identity_min_margin < 0:
+        p.error("--identity-min-margin must be >= 0")
 
     device = resolve_device(args.device)
 
@@ -169,6 +269,7 @@ def main() -> None:
     chunk_samples = int(round(args.chunk_seconds * sr))
     overlap_samples = int(round(args.overlap_seconds * sr))
     silence_peak_threshold = 10.0 ** (args.silence_threshold_db / 20.0)
+    identity_peak_threshold = 10.0 ** (args.identity_min_peak_db / 20.0)
     hop = chunk_samples - overlap_samples
     if hop <= 0:
         raise RuntimeError("Chunk overlap leaves a non-positive hop size")
@@ -183,10 +284,21 @@ def main() -> None:
         f"overlap={args.overlap_seconds:.2f}s, chunks={len(starts)}, "
         f"silence peak<={args.silence_threshold_db:g} dBFS"
     )
+    tracker = None
+    if args.identity_model != "none":
+        tracker = SingerIdentityTracker(
+            args.identity_model,
+            device,
+            sr,
+            identity_peak_threshold,
+            args.identity_min_margin,
+        )
+        print(f"[UNMIXX identity] model={args.identity_model}, min-peak={args.identity_min_peak_db:g} dBFS")
 
     accum = torch.zeros((2, total_samples), dtype=torch.float32)
     weights = torch.zeros(total_samples, dtype=torch.float32)
     prev_raw: torch.Tensor | None = None
+    prev_was_voiced = False
     skipped_silent_chunks = 0
 
     for idx, start in enumerate(starts):
@@ -215,27 +327,75 @@ def main() -> None:
             skipped = False
 
         swapped = False
+        identity_vectors: list[torch.Tensor | None] | None = None
+        identity_assignment_trusted = False
         if skipped:
             print(
                 f"  chunk {idx+1:03d}/{len(starts):03d} "
                 f"{start/sr:7.2f}-{end/sr:7.2f}s silence=skip"
             )
-        elif prev_raw is not None and overlap_samples > 0:
+        elif prev_raw is not None and prev_was_voiced and overlap_samples > 0:
             ov = min(overlap_samples, prev_raw.shape[-1], est.shape[-1])
             if ov > 0:
-                _, swapped, keep_score, swap_score = align_two_sources(prev_raw[:, -ov:], est[:, :ov])
+                previous, current = prev_raw[:, -ov:], est[:, :ov]
+                _, overlap_swap, keep_score, swap_score = align_two_sources(previous, current)
+                overlap_reliable = (
+                    previous.abs().amax() > identity_peak_threshold
+                    and current.abs().amax() > identity_peak_threshold
+                    and abs(swap_score - keep_score) >= args.identity_min_margin
+                )
+                if tracker is None:
+                    # Preserve the previous continuity-only behavior when
+                    # identity tracking is explicitly disabled.
+                    swapped = overlap_swap
+                    assignment = "overlap"
+                elif overlap_reliable:
+                    swapped = overlap_swap
+                    assignment = "overlap"
+                    identity_assignment_trusted = True
+                elif tracker is not None:
+                    identity_vectors = tracker.embeddings(est)
+                    identity_decision = tracker.decide(identity_vectors)
+                    if identity_decision is not None:
+                        swapped, keep_score, swap_score = identity_decision
+                        assignment = "identity"
+                        identity_assignment_trusted = True
+                    else:
+                        assignment = "ambiguous"
+                else:
+                    assignment = "ambiguous"
                 if swapped:
                     est = est.flip(0)
+                    if identity_vectors is not None:
+                        identity_vectors.reverse()
                 print(
                     f"  chunk {idx+1:03d}/{len(starts):03d} "
                     f"{start/sr:7.2f}-{end/sr:7.2f}s "
-                    f"perm={'swap' if swapped else 'keep'} "
+                    f"perm={'swap' if swapped else 'keep'} via={assignment} "
                     f"scores={keep_score:+.3f}/{swap_score:+.3f}"
                 )
             else:
                 print(f"  chunk {idx+1:03d}/{len(starts):03d} {start/sr:7.2f}-{end/sr:7.2f}s")
         else:
-            print(f"  chunk {idx+1:03d}/{len(starts):03d} {start/sr:7.2f}-{end/sr:7.2f}s")
+            if tracker is not None:
+                identity_vectors = tracker.embeddings(est)
+                identity_decision = tracker.decide(identity_vectors)
+                if identity_decision is not None:
+                    swapped, keep_score, swap_score = identity_decision
+                    identity_assignment_trusted = True
+                    if swapped:
+                        est = est.flip(0)
+                        identity_vectors.reverse()
+                    print(
+                        f"  chunk {idx+1:03d}/{len(starts):03d} "
+                        f"{start/sr:7.2f}-{end/sr:7.2f}s "
+                        f"perm={'swap' if swapped else 'keep'} via=identity "
+                        f"scores={keep_score:+.3f}/{swap_score:+.3f}"
+                    )
+                else:
+                    print(f"  chunk {idx+1:03d}/{len(starts):03d} {start/sr:7.2f}-{end/sr:7.2f}s")
+            else:
+                print(f"  chunk {idx+1:03d}/{len(starts):03d} {start/sr:7.2f}-{end/sr:7.2f}s")
 
         window = make_window(
             actual_len,
@@ -245,7 +405,17 @@ def main() -> None:
         )
         accum[:, start:end] += est * window.unsqueeze(0)
         weights[start:end] += window
+        if tracker is not None and not skipped:
+            if identity_vectors is None:
+                identity_vectors = tracker.embeddings(est)
+            if all(prototype is None for prototype in tracker.prototypes):
+                # The first clearly voiced UNMIXX pair establishes arbitrary,
+                # but thereafter persistent, track identities.
+                identity_assignment_trusted = True
+            if identity_assignment_trusted:
+                tracker.update(identity_vectors)
         prev_raw = est
+        prev_was_voiced = not skipped
 
         if device.type == "cuda" and (idx + 1) % 16 == 0:
             torch.cuda.empty_cache()

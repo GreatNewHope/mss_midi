@@ -236,6 +236,9 @@ def separate_duet_unmixx(
     chunk_seconds: float,
     overlap_seconds: float,
     silence_threshold_db: float,
+    identity_model: str,
+    identity_min_peak_db: float,
+    identity_min_margin: float,
 ) -> tuple[Path, Path]:
     """Run memory-safe chunked UNMIXX inference and return two singer WAVs.
 
@@ -262,6 +265,9 @@ def separate_duet_unmixx(
         "--chunk-seconds", str(chunk_seconds),
         "--overlap-seconds", str(overlap_seconds),
         "--silence-threshold-db", str(silence_threshold_db),
+        "--identity-model", identity_model,
+        "--identity-min-peak-db", str(identity_min_peak_db),
+        "--identity-min-margin", str(identity_min_margin),
     ])
 
     spk1 = find_unique_stem(output_dir, "spk1")
@@ -370,6 +376,9 @@ def run_pipeline(args: argparse.Namespace) -> PipelineOutputs:
             args.unmixx_chunk_seconds,
             args.unmixx_overlap_seconds,
             args.unmixx_silence_threshold_db,
+            args.unmixx_identity_model,
+            args.unmixx_identity_min_peak_db,
+            args.unmixx_identity_min_margin,
         )
     else:
         print("[Stage 3] SKIPPED: one foreground singer expected")
@@ -466,6 +475,24 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--unmixx-identity-model",
+        choices=("none", "byol", "contrastive", "contrastive-vc", "uniformity", "vicreg"),
+        default="byol",
+        help="Singer-identity checkpoint for Stage 3 permutation tracking (default: byol; none disables it).",
+    )
+    p.add_argument(
+        "--unmixx-identity-min-peak-db",
+        type=float,
+        default=-45.0,
+        help="Minimum estimated-stem peak level for identity prototype updates (default: -45 dBFS).",
+    )
+    p.add_argument(
+        "--unmixx-identity-min-margin",
+        type=float,
+        default=0.05,
+        help="Minimum singer-embedding keep/swap score difference needed to resolve an ambiguous boundary.",
+    )
+    p.add_argument(
         "--python",
         default=sys.executable,
         help="Python executable used to launch MSS and UNMIXX inference scripts",
@@ -486,6 +513,10 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         parser.error("--unmixx-overlap-seconds must be >= 0 and smaller than --unmixx-chunk-seconds")
     if math.isnan(args.unmixx_silence_threshold_db) or args.unmixx_silence_threshold_db > 0:
         parser.error("--unmixx-silence-threshold-db must be <= 0 dBFS")
+    if math.isnan(args.unmixx_identity_min_peak_db) or args.unmixx_identity_min_peak_db > 0:
+        parser.error("--unmixx-identity-min-peak-db must be <= 0 dBFS")
+    if args.unmixx_identity_min_margin < 0:
+        parser.error("--unmixx-identity-min-margin must be >= 0")
 
 
 def main() -> None:
