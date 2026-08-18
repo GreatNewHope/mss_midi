@@ -18,6 +18,7 @@ OUTPUT_DIR ?= run_song
 DEVICE ?= auto
 UNMIXX_CHUNK_SECONDS ?= 4
 UNMIXX_OVERLAP_SECONDS ?= 1
+UNMIXX_SILENCE_THRESHOLD_DB ?= -80
 CHOIR_INPUT ?=
 CHOIR_OUTPUT_DIR ?= choir_parts
 CHOIR_DEVICE ?= $(DEVICE)
@@ -143,6 +144,7 @@ run-duet duet: prepare
 		--device "$(DEVICE)" \
 		--unmixx-chunk-seconds "$(UNMIXX_CHUNK_SECONDS)" \
 		--unmixx-overlap-seconds "$(UNMIXX_OVERLAP_SECONDS)" \
+		--unmixx-silence-threshold-db "$(UNMIXX_SILENCE_THRESHOLD_DB)" \
 		--output-dir "$(OUTPUT_DIR)"
 
 run-full full: prepare
@@ -153,6 +155,7 @@ run-full full: prepare
 		--device "$(DEVICE)" \
 		--unmixx-chunk-seconds "$(UNMIXX_CHUNK_SECONDS)" \
 		--unmixx-overlap-seconds "$(UNMIXX_OVERLAP_SECONDS)" \
+		--unmixx-silence-threshold-db "$(UNMIXX_SILENCE_THRESHOLD_DB)" \
 		--output-dir "$(OUTPUT_DIR)"
 
 run-choir-parts choir-parts: prepare-choir-parts

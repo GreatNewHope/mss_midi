@@ -49,7 +49,7 @@ ckpt/conf.yml
 ckpt/best.ckpt
 ```
 
-The project uses the official UNMIXX model/checkpoint but runs it through the bundled `unmixx_chunked_inference.py` helper. The upstream `inference.py` forwards the entire WAV in one call, which can exhaust GPU memory on full songs. The helper loads the model once, runs short overlapping windows, aligns the two output permutations between neighbouring chunks, and overlap-adds them into full-length stems.
+The project uses the official UNMIXX model/checkpoint but runs it through the bundled `unmixx_chunked_inference.py` helper. The upstream `inference.py` forwards the entire WAV in one call, which can exhaust GPU memory on full songs. The helper loads the model once, runs short overlapping windows, skips windows with a peak at or below -80 dBFS, aligns the two output permutations between neighbouring chunks, and overlap-adds them into full-length stems. Set `--unmixx-silence-threshold-db -inf` (or `UNMIXX_SILENCE_THRESHOLD_DB=-inf` with `make`) to skip only exact digital silence.
 
 ## Important interpretation of Stage 2
 

@@ -4,7 +4,8 @@
 UNMIXX was trained on short segments (4 s in the public config), while the
 reference inference script forwards the whole file at once. This runner keeps
 one model loaded, processes overlapping chunks, tracks the two-source
-permutation between neighbouring chunks, and overlap-adds the results.
+permutation between neighbouring chunks, overlap-adds the results, and skips
+model inference for chunks that are below a configurable silence threshold.
 """
 
 from __future__ import annotations
@@ -117,6 +118,11 @@ def make_window(length: int, overlap: int, is_first: bool, is_last: bool) -> tor
     return w
 
 
+def is_silent(waveform: torch.Tensor, peak_threshold: float) -> bool:
+    """Return whether every sample is at or below the configured peak limit."""
+    return bool(waveform.abs().amax() <= peak_threshold)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Chunked long-form inference for the official UNMIXX model")
     p.add_argument("--unmixx-repo", type=Path, required=True)
@@ -127,12 +133,23 @@ def main() -> None:
     p.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     p.add_argument("--chunk-seconds", type=float, default=4.0)
     p.add_argument("--overlap-seconds", type=float, default=1.0)
+    p.add_argument(
+        "--silence-threshold-db",
+        type=float,
+        default=-80.0,
+        help=(
+            "Skip UNMIXX for chunks whose peak is at or below this dBFS value "
+            "(default: -80). Use -inf to skip only exact digital silence."
+        ),
+    )
     args = p.parse_args()
 
     if args.chunk_seconds <= 0:
         p.error("--chunk-seconds must be > 0")
     if args.overlap_seconds < 0 or args.overlap_seconds >= args.chunk_seconds:
         p.error("--overlap-seconds must be >= 0 and < --chunk-seconds")
+    if math.isnan(args.silence_threshold_db) or args.silence_threshold_db > 0:
+        p.error("--silence-threshold-db must be <= 0 dBFS")
 
     device = resolve_device(args.device)
 
@@ -151,6 +168,7 @@ def main() -> None:
     total_samples = waveform.shape[-1]
     chunk_samples = int(round(args.chunk_seconds * sr))
     overlap_samples = int(round(args.overlap_seconds * sr))
+    silence_peak_threshold = 10.0 ** (args.silence_threshold_db / 20.0)
     hop = chunk_samples - overlap_samples
     if hop <= 0:
         raise RuntimeError("Chunk overlap leaves a non-positive hop size")
@@ -162,32 +180,47 @@ def main() -> None:
     print(f"[UNMIXX chunked] device={device}, sr={sr}, duration={total_samples/sr:.2f}s")
     print(
         f"[UNMIXX chunked] chunk={args.chunk_seconds:.2f}s, "
-        f"overlap={args.overlap_seconds:.2f}s, chunks={len(starts)}"
+        f"overlap={args.overlap_seconds:.2f}s, chunks={len(starts)}, "
+        f"silence peak<={args.silence_threshold_db:g} dBFS"
     )
 
     accum = torch.zeros((2, total_samples), dtype=torch.float32)
     weights = torch.zeros(total_samples, dtype=torch.float32)
     prev_raw: torch.Tensor | None = None
+    skipped_silent_chunks = 0
 
     for idx, start in enumerate(starts):
         end = min(start + chunk_samples, total_samples)
         raw = waveform[:, start:end]
         actual_len = raw.shape[-1]
 
-        # Pad only the final chunk to the normal inference size. Crop after inference.
-        if actual_len < chunk_samples:
-            raw_in = torch.nn.functional.pad(raw, (0, chunk_samples - actual_len))
+        if is_silent(raw, silence_peak_threshold):
+            # Keeping both sources at zero preserves the original timeline and
+            # lets overlap-add handle transitions to neighbouring voiced chunks.
+            est = torch.zeros((2, actual_len), dtype=torch.float32)
+            skipped_silent_chunks += 1
+            skipped = True
         else:
-            raw_in = raw
+            # Pad only the final chunk to the normal inference size. Crop after inference.
+            if actual_len < chunk_samples:
+                raw_in = torch.nn.functional.pad(raw, (0, chunk_samples - actual_len))
+            else:
+                raw_in = raw
 
-        x = raw_in.unsqueeze(0).to(device, non_blocking=True)  # [1,1,T]
-        with torch.inference_mode():
-            outs = model(x, istest=True)
-            est = normalize_model_output(outs)[0, :2, :actual_len].float().cpu()
-        del x, outs
+            x = raw_in.unsqueeze(0).to(device, non_blocking=True)  # [1,1,T]
+            with torch.inference_mode():
+                outs = model(x, istest=True)
+                est = normalize_model_output(outs)[0, :2, :actual_len].float().cpu()
+            del x, outs
+            skipped = False
 
         swapped = False
-        if prev_raw is not None and overlap_samples > 0:
+        if skipped:
+            print(
+                f"  chunk {idx+1:03d}/{len(starts):03d} "
+                f"{start/sr:7.2f}-{end/sr:7.2f}s silence=skip"
+            )
+        elif prev_raw is not None and overlap_samples > 0:
             ov = min(overlap_samples, prev_raw.shape[-1], est.shape[-1])
             if ov > 0:
                 _, swapped, keep_score, swap_score = align_two_sources(prev_raw[:, -ov:], est[:, :ov])
@@ -224,6 +257,7 @@ def main() -> None:
     spk2 = args.output_dir / "spk2.wav"
     save_wav(spk1, result[0:1], sr)
     save_wav(spk2, result[1:2], sr)
+    print(f"[UNMIXX chunked] skipped silent chunks: {skipped_silent_chunks}/{len(starts)}")
     print(f"[Save] {spk1}")
     print(f"[Save] {spk2}")
 

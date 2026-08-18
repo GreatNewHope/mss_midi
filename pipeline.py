@@ -21,6 +21,7 @@ already a vocal-only stem.
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import shutil
 import subprocess
@@ -234,6 +235,7 @@ def separate_duet_unmixx(
     device: str,
     chunk_seconds: float,
     overlap_seconds: float,
+    silence_threshold_db: float,
 ) -> tuple[Path, Path]:
     """Run memory-safe chunked UNMIXX inference and return two singer WAVs.
 
@@ -259,6 +261,7 @@ def separate_duet_unmixx(
         "--device", unmixx_device(device),
         "--chunk-seconds", str(chunk_seconds),
         "--overlap-seconds", str(overlap_seconds),
+        "--silence-threshold-db", str(silence_threshold_db),
     ])
 
     spk1 = find_unique_stem(output_dir, "spk1")
@@ -366,6 +369,7 @@ def run_pipeline(args: argparse.Namespace) -> PipelineOutputs:
             args.unmixx_device,
             args.unmixx_chunk_seconds,
             args.unmixx_overlap_seconds,
+            args.unmixx_silence_threshold_db,
         )
     else:
         print("[Stage 3] SKIPPED: one foreground singer expected")
@@ -453,6 +457,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overlap between UNMIXX chunks for crossfade and singer-order tracking (default: 1.0 s).",
     )
     p.add_argument(
+        "--unmixx-silence-threshold-db",
+        type=float,
+        default=-80.0,
+        help=(
+            "Skip UNMIXX chunks with peak audio at or below this dBFS value "
+            "(default: -80; use -inf for exact digital silence only)."
+        ),
+    )
+    p.add_argument(
         "--python",
         default=sys.executable,
         help="Python executable used to launch MSS and UNMIXX inference scripts",
@@ -471,6 +484,8 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         parser.error("--unmixx-chunk-seconds must be > 0")
     if args.unmixx_overlap_seconds < 0 or args.unmixx_overlap_seconds >= args.unmixx_chunk_seconds:
         parser.error("--unmixx-overlap-seconds must be >= 0 and smaller than --unmixx-chunk-seconds")
+    if math.isnan(args.unmixx_silence_threshold_db) or args.unmixx_silence_threshold_db > 0:
+        parser.error("--unmixx-silence-threshold-db must be <= 0 dBFS")
 
 
 def main() -> None:
