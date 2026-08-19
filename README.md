@@ -104,17 +104,23 @@ equivalent local implementation. If upstream removes or renames either target,
 
 ### Colab
 
-Run the repository from `/content`, then use Colab's existing Python
-environment explicitly:
+Run the repository from `/content`:
 
 ```bash
-make prepare PACKAGE_MANAGER=pip PYTHON=python
+make prepare
 ```
 
-The supplied notebook uses this command and points UNMIXX at
+The Makefile detects Colab from its `COLAB_RELEASE_TAG` environment marker.
+When it is present, the default package manager is `pip` and the default
+interpreter is `python`, so installs and pipeline subprocesses use Colab's
+existing Python environment. Outside Colab, the defaults remain `auto` for
+`PACKAGE_MANAGER` (prefer `uv`, otherwise `pip`) and `python3` for `PYTHON`.
+Explicit `PACKAGE_MANAGER=...` and `PYTHON=...` values always take precedence.
+
+The supplied notebook uses these defaults and points UNMIXX at
 `/content/third_party/unmixx`. A Colab GPU runtime is required for practical
-performance. Every `make run-*` target runs `prepare` itself, so include
-`PACKAGE_MANAGER=pip PYTHON=python` on each Colab `make run-*` command too.
+performance. Every `make run-*` target runs `prepare` itself, so no additional
+environment-variable arguments are needed in Colab.
 
 ## 3. Music-Source-Separation-Training
 

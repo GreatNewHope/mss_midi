@@ -1,10 +1,20 @@
-# Prefers uv locally and falls back to pip when uv is unavailable (for example,
-# in Colab). Override values as needed, e.g.:
+# Prefers uv locally and uses Colab's existing pip/Python environment when the
+# COLAB_RELEASE_TAG marker is present. Override values as needed, e.g.:
 # make run-duet INPUT=/path/to/song.flac DEVICE=mps
 
 UV ?= uv
-PYTHON ?= python3
-PACKAGE_MANAGER ?= auto
+IN_COLAB := $(if $(COLAB_RELEASE_TAG),1,0)
+
+ifeq ($(IN_COLAB),1)
+DEFAULT_PYTHON := python
+DEFAULT_PACKAGE_MANAGER := pip
+else
+DEFAULT_PYTHON := python3
+DEFAULT_PACKAGE_MANAGER := auto
+endif
+
+PYTHON ?= $(DEFAULT_PYTHON)
+PACKAGE_MANAGER ?= $(DEFAULT_PACKAGE_MANAGER)
 THIRD_PARTY ?= third_party
 UNMIXX_REPO ?= $(THIRD_PARTY)/unmixx
 MSS_REPO ?= $(THIRD_PARTY)/Music-Source-Separation-Training
