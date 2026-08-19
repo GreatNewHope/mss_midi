@@ -239,6 +239,8 @@ def separate_duet_unmixx(
     identity_model: str,
     identity_min_peak_db: float,
     identity_min_margin: float,
+    alignment_review: bool,
+    alignment_overrides: Path | None,
 ) -> tuple[Path, Path]:
     """Run memory-safe chunked UNMIXX inference and return two singer WAVs.
 
@@ -253,7 +255,7 @@ def separate_duet_unmixx(
     if not helper.exists():
         raise RuntimeError(f"Missing bundled UNMIXX helper: {helper}")
 
-    run([
+    command = [
         python_executable,
         str(helper),
         "--unmixx-repo", str(repo),
@@ -268,7 +270,12 @@ def separate_duet_unmixx(
         "--identity-model", identity_model,
         "--identity-min-peak-db", str(identity_min_peak_db),
         "--identity-min-margin", str(identity_min_margin),
-    ])
+    ]
+    if alignment_review:
+        command.append("--alignment-review")
+    if alignment_overrides is not None:
+        command.extend(["--alignment-overrides", str(alignment_overrides)])
+    run(command)
 
     spk1 = find_unique_stem(output_dir, "spk1")
     spk2 = find_unique_stem(output_dir, "spk2")
@@ -379,6 +386,8 @@ def run_pipeline(args: argparse.Namespace) -> PipelineOutputs:
             args.unmixx_identity_model,
             args.unmixx_identity_min_peak_db,
             args.unmixx_identity_min_margin,
+            args.unmixx_alignment_review,
+            args.unmixx_alignment_overrides,
         )
     else:
         print("[Stage 3] SKIPPED: one foreground singer expected")
@@ -491,6 +500,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.05,
         help="Minimum singer-embedding keep/swap score difference needed to resolve an ambiguous boundary.",
+    )
+    p.add_argument(
+        "--unmixx-alignment-review",
+        action="store_true",
+        help="Write raw Stage-3 chunk clips and a browser page for manual alignment review.",
+    )
+    p.add_argument(
+        "--unmixx-alignment-overrides",
+        type=Path,
+        help="Reviewed alignment_overrides.json to use instead of automatic Stage-3 alignment.",
     )
     p.add_argument(
         "--python",

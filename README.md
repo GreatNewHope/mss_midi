@@ -55,6 +55,24 @@ By default, Stage 3 also downloads Sony CSL's BYOL singer-identity TorchScript c
 
 Each identity-enabled Stage 3 run writes `alignment_audit.json` and `alignment_audit.html` beside `spk1.wav` / `spk2.wav`. Open the HTML file to inspect the initial identity-only cluster state, every Viterbi iteration, every state change, identity keep/swap scores, weighted overlap scores, and each dynamic-programming backpointer. This is the diagnostic to use when a stem changes singer after silence.
 
+### Manual alignment and supervised calibration
+
+When one annotated song is more trustworthy than guessed thresholds, create a manual review pack instead of tuning the identity or overlap parameters:
+
+```bash
+python pipeline.py INPUT --mode duet --unmixx-repo third_party/unmixx \
+  --unmixx-alignment-review --output-dir RUN_DIR
+```
+
+This writes `RUN_DIR/stage3_duet_unmixx/raw_unmixx/alignment_review/index.html` and one raw UNMIXX A/B clip per voiced chunk. In the page, choose `keep` when raw A should enter Stem 1, and `swap` when raw B should enter Stem 1. Every voiced chunk starts unselected; the model's choice is displayed only as a reference. Export `alignment_overrides.json`, then rerun with:
+
+```bash
+python pipeline.py INPUT --mode duet --unmixx-repo third_party/unmixx \
+  --unmixx-alignment-overrides alignment_overrides.json --output-dir RUN_DIR
+```
+
+The reviewed choices are applied exactly and recorded in the audit. Share that exported JSON together with its `alignment_audit.json` when ready; it is the supervised sample used to calibrate identity and overlap confidence rather than guessing their values.
+
 ## Important interpretation of Stage 2
 
 For this pipeline we assume Mega53 behaves like it did on the successful test song:

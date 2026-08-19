@@ -406,6 +406,61 @@ function num(value){return value===null?'—':Number(value).toFixed(3)}function 
     print(f"[UNMIXX identity] audit: {html_path}")
 
 
+def load_alignment_overrides(path: Path, chunk_count: int) -> list[bool]:
+    """Read reviewed keep/swap choices exported by the alignment review page."""
+    try:
+        payload = json.loads(path.read_text())
+        entries = payload["chunks"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise RuntimeError(f"Could not read alignment overrides from {path}: {exc}") from exc
+    if not isinstance(entries, list) or len(entries) != chunk_count:
+        raise RuntimeError(f"{path} must contain exactly {chunk_count} reviewed chunk choices")
+    states: list[bool] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict) or entry.get("index") != index + 1:
+            raise RuntimeError(f"{path}: expected chunk index {index + 1}")
+        choice = entry.get("state")
+        if choice not in {"keep", "swap"}:
+            raise RuntimeError(f"{path}: chunk {index + 1} must be keep or swap")
+        states.append(choice == "swap")
+    return states
+
+
+def write_alignment_review(
+    output_dir: Path, chunks: list[ChunkEstimate], model_states: list[bool], sample_rate: int
+) -> None:
+    """Write raw chunk clips and a local page for human keep/swap annotation."""
+    review_dir = output_dir / "alignment_review"
+    review_dir.mkdir(parents=True, exist_ok=True)
+    metadata: list[dict[str, object]] = []
+    for index, chunk in enumerate(chunks):
+        clip_a = clip_b = None
+        if not chunk.skipped:
+            clip_a = f"chunk_{index + 1:03d}_a.wav"
+            clip_b = f"chunk_{index + 1:03d}_b.wav"
+            save_wav(review_dir / clip_a, chunk.estimates[0:1], sample_rate)
+            save_wav(review_dir / clip_b, chunk.estimates[1:2], sample_rate)
+        metadata.append(
+            {
+                "index": index + 1,
+                "start": chunk.start / sample_rate,
+                "end": chunk.end / sample_rate,
+                "skipped": chunk.skipped,
+                "model_state": "swap" if model_states[index] else "keep",
+                "clip_a": clip_a,
+                "clip_b": clip_b,
+            }
+        )
+    data = json.dumps(metadata, separators=(",", ":"))
+    (review_dir / "index.html").write_text(
+        """<meta charset="utf-8"><title>UNMIXX manual alignment review</title>
+<style>body{font:14px system-ui,sans-serif;max-width:1100px;margin:24px;color:#17212d}h1{margin-bottom:4px}.note{color:#566474}.chunk{display:grid;grid-template-columns:100px 1fr 1fr 180px;gap:12px;align-items:center;border-top:1px solid #dce3ea;padding:10px 0}.silent{opacity:.55}.choice label{display:block;margin:4px 0}audio{width:100%}button{padding:8px 12px;font:inherit}.missing{outline:2px solid #bd3d4b}@media(max-width:700px){.chunk{grid-template-columns:1fr}.chunk audio{max-width:350px}}</style>
+<main id="review"><h1>Manual chunk alignment</h1><p class="note">For each voiced chunk, audition raw UNMIXX A and B. Choose <b>keep</b> when A belongs in Stem 1 and B in Stem 2; choose <b>swap</b> for the reverse. The model suggestion is shown only for comparison. Export the completed choices and provide that JSON file to a later run.</p><button id="export" type="button">Export reviewed alignment JSON</button><p id="status" class="note"></p><section id="chunks"></section></main>
+<script>const chunks=""" + data + """;const host=document.getElementById('chunks');const status=document.getElementById('status');for(const c of chunks){const row=document.createElement('article');row.className='chunk'+(c.skipped?' silent':'');row.innerHTML=`<strong>Chunk ${c.index}<br>${c.start.toFixed(2)}–${c.end.toFixed(2)} s<br><small>model: ${c.model_state}</small></strong>${c.skipped?'<span>silent / skipped</span><span></span><span>keep is exported automatically</span>':`<audio controls preload="none" src="${c.clip_a}"></audio><audio controls preload="none" src="${c.clip_b}"></audio><span class="choice"><label><input type="radio" name="chunk-${c.index}" value="keep"> Keep: A → Stem 1</label><label><input type="radio" name="chunk-${c.index}" value="swap"> Swap: B → Stem 1</label></span>`}`;host.append(row)}document.getElementById('export').onclick=()=>{const reviewed=[];let missing=false;for(const c of chunks){const selected=document.querySelector(`input[name="chunk-${c.index}"]:checked`);const state=c.skipped?'keep':selected?.value;if(!state){missing=true;document.querySelector(`input[name="chunk-${c.index}"]`)?.closest('.chunk').classList.add('missing')}reviewed.push({index:c.index,state:state||'unassigned'})}if(missing){status.textContent='Choose keep or swap for every voiced chunk before exporting.';return}const blob=new Blob([JSON.stringify({format:'unmixx-alignment-overrides-v1',chunks:reviewed},null,2)+'\\n'],{type:'application/json'});const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='alignment_overrides.json';link.click();URL.revokeObjectURL(link.href);status.textContent='Downloaded alignment_overrides.json.'}</script>"""
+    )
+    print(f"[UNMIXX identity] manual review: {review_dir / 'index.html'}")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Chunked long-form inference for the official UNMIXX model")
     p.add_argument("--unmixx-repo", type=Path, required=True)
@@ -433,6 +488,16 @@ def main() -> None:
         type=float,
         default=0.05,
         help="Minimum singer-identity keep/swap score difference required to decide an ambiguous boundary.",
+    )
+    p.add_argument(
+        "--alignment-review",
+        action="store_true",
+        help="Write raw chunk clips and a browser page for manual keep/swap annotation.",
+    )
+    p.add_argument(
+        "--alignment-overrides",
+        type=Path,
+        help="Reviewed alignment_overrides.json exported by --alignment-review.",
     )
     p.add_argument(
         "--silence-threshold-db",
@@ -559,9 +624,18 @@ def main() -> None:
         states, _, trace = global_assignments(
             chunks, overlap_samples, identity_peak_threshold, args.identity_min_margin
         )
-        args.output_dir.mkdir(parents=True, exist_ok=True)
-        write_alignment_audit(args.output_dir, trace, sr)
         assignment_name = "global"
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    if args.alignment_review:
+        write_alignment_review(args.output_dir, chunks, states, sr)
+    if args.alignment_overrides is not None:
+        states = load_alignment_overrides(args.alignment_overrides, len(chunks))
+        assignment_name = "human-review"
+        if tracker is not None:
+            trace["human_overrides"] = states
+    if tracker is not None:
+        write_alignment_audit(args.output_dir, trace, sr)
 
     accum = torch.zeros((2, total_samples), dtype=torch.float32)
     weights = torch.zeros(total_samples, dtype=torch.float32)
@@ -584,7 +658,6 @@ def main() -> None:
 
     result = accum / weights.clamp_min(1e-6).unsqueeze(0)
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
     spk1 = args.output_dir / "spk1.wav"
     spk2 = args.output_dir / "spk2.wav"
     save_wav(spk1, result[0:1], sr)
