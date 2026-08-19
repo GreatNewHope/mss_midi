@@ -117,6 +117,13 @@ existing Python environment. Outside Colab, the defaults remain `auto` for
 `PACKAGE_MANAGER` (prefer `uv`, otherwise `pip`) and `python3` for `PYTHON`.
 Explicit `PACKAGE_MANAGER=...` and `PYTHON=...` values always take precedence.
 
+Colab's preinstalled CUDA-enabled PyTorch is retained. At the end of `make
+prepare`, the Makefile reads its PyTorch and CUDA versions and force-installs
+the matching TorchAudio wheel from PyTorch's CUDA index. This prevents a PyPI
+TorchAudio wheel compiled for a different CUDA version from being mixed with
+Colab's PyTorch. The first `make run-*` after this change repairs an already
+mismatched runtime automatically.
+
 The supplied notebook uses these defaults and points UNMIXX at
 `/content/third_party/unmixx`. A Colab GPU runtime is required for practical
 performance. Every `make run-*` target runs `prepare` itself, so no additional

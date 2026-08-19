@@ -8,9 +8,11 @@ IN_COLAB := $(if $(COLAB_RELEASE_TAG),1,0)
 ifeq ($(IN_COLAB),1)
 DEFAULT_PYTHON := python
 DEFAULT_PACKAGE_MANAGER := pip
+CORE_REQUIREMENTS := requirements-colab.txt
 else
 DEFAULT_PYTHON := python3
 DEFAULT_PACKAGE_MANAGER := auto
+CORE_REQUIREMENTS := requirements.txt
 endif
 
 PYTHON ?= $(DEFAULT_PYTHON)
@@ -91,6 +93,16 @@ endif
 GAME_LANGUAGE_FLAG = $(if $(MIDI_LANGUAGE),--language "$(MIDI_LANGUAGE)")
 GAME_GLOB_FLAG = $(if $(MIDI_GLOB),--glob "$(MIDI_GLOB)")
 
+ifeq ($(IN_COLAB),1)
+# Colab supplies CUDA-enabled torch. Install the matching TorchAudio wheel from
+# PyTorch's CUDA index rather than allowing PyPI to select a different CUDA build.
+COLAB_TORCH_VERSION := $(shell $(PYTHON) -c 'import torch; print(torch.__version__.split("+")[0])')
+COLAB_TORCH_CUDA := $(shell $(PYTHON) -c 'import torch; print(torch.version.cuda.replace(".", ""))')
+INSTALL_COLAB_TORCHAUDIO = $(PYTHON) -m pip install --upgrade --force-reinstall --no-deps "torchaudio==$(COLAB_TORCH_VERSION)" --index-url "https://download.pytorch.org/whl/cu$(COLAB_TORCH_CUDA)"
+else
+INSTALL_COLAB_TORCHAUDIO =
+endif
+
 .PHONY: help prepare prepare-game-midi prepare-choir-parts prepare-polyphonic-choir-midi repositories patch-unmixx-requirements dependencies game-dependencies choir-parts-dependencies polyphonic-choir-midi-dependencies download-game-model run-duet duet run-full full run-choir-parts choir-parts run-midi midi run-singing-midi singing-midi run-polyphonic-choir-midi polyphonic-choir-midi
 
 help:
@@ -132,11 +144,12 @@ repositories:
 patch-unmixx-requirements: repositories patch_unmixx_requirements.py
 	$(RUN_PYTHON) patch_unmixx_requirements.py "$(UNMIXX_REPO)"
 
-dependencies: patch-unmixx-requirements requirements.txt requirements-unmixx-runtime.txt requirements-mss-runtime.txt pyproject.toml
+dependencies: patch-unmixx-requirements $(CORE_REQUIREMENTS) requirements-unmixx-runtime.txt requirements-mss-runtime.txt pyproject.toml
 	$(PREPARE_ENVIRONMENT)
 	$(INSTALL_UNMIXX_REQUIREMENTS)
 	$(INSTALL_MSS_REQUIREMENTS)
-	$(INSTALL_REQUIREMENTS) requirements.txt
+	$(INSTALL_REQUIREMENTS) $(CORE_REQUIREMENTS)
+	$(INSTALL_COLAB_TORCHAUDIO)
 
 game-dependencies: repositories
 	$(INSTALL_REQUIREMENTS) "$(GAME_REPO)/requirements.txt"

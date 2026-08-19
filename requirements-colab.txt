@@ -1,0 +1,6 @@
+# Colab already provides CUDA-enabled torch and torch.  The Makefile repairs
+# TorchAudio from PyTorch's matching CUDA index after these packages install.
+huggingface-hub
+melband-roformer-infer
+PyYAML
+soundfile
