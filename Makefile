@@ -34,6 +34,8 @@ UNMIXX_SILENCE_THRESHOLD_DB ?= -80
 UNMIXX_IDENTITY_MODEL ?= byol
 UNMIXX_IDENTITY_MIN_PEAK_DB ?= -45
 UNMIXX_IDENTITY_MIN_MARGIN ?= 0.05
+UNMIXX_ALIGNMENT_REVIEW ?= 0
+UNMIXX_ALIGNMENT_OVERRIDES ?=
 CHOIR_INPUT ?=
 CHOIR_OUTPUT_DIR ?= choir_parts
 CHOIR_DEVICE ?= $(DEVICE)
@@ -176,6 +178,8 @@ run-duet duet: prepare
 		--unmixx-identity-model "$(UNMIXX_IDENTITY_MODEL)" \
 		--unmixx-identity-min-peak-db "$(UNMIXX_IDENTITY_MIN_PEAK_DB)" \
 		--unmixx-identity-min-margin "$(UNMIXX_IDENTITY_MIN_MARGIN)" \
+		$(if $(filter 1 true yes,$(UNMIXX_ALIGNMENT_REVIEW)),--unmixx-alignment-review) \
+		$(if $(strip $(UNMIXX_ALIGNMENT_OVERRIDES)),--unmixx-alignment-overrides "$(UNMIXX_ALIGNMENT_OVERRIDES)") \
 		--output-dir "$(OUTPUT_DIR)"
 
 run-full full: prepare
@@ -190,6 +194,8 @@ run-full full: prepare
 		--unmixx-identity-model "$(UNMIXX_IDENTITY_MODEL)" \
 		--unmixx-identity-min-peak-db "$(UNMIXX_IDENTITY_MIN_PEAK_DB)" \
 		--unmixx-identity-min-margin "$(UNMIXX_IDENTITY_MIN_MARGIN)" \
+		$(if $(filter 1 true yes,$(UNMIXX_ALIGNMENT_REVIEW)),--unmixx-alignment-review) \
+		$(if $(strip $(UNMIXX_ALIGNMENT_OVERRIDES)),--unmixx-alignment-overrides "$(UNMIXX_ALIGNMENT_OVERRIDES)") \
 		--output-dir "$(OUTPUT_DIR)"
 
 run-choir-parts choir-parts: prepare-choir-parts
