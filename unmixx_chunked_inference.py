@@ -11,8 +11,10 @@ model inference for chunks that are below a configurable silence threshold.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -124,8 +126,33 @@ def is_silent(waveform: torch.Tensor, peak_threshold: float) -> bool:
     return bool(waveform.abs().amax() <= peak_threshold)
 
 
+@dataclass
+class ChunkEstimate:
+    """One unpermuted UNMIXX estimate retained until global assignment."""
+
+    start: int
+    end: int
+    estimates: torch.Tensor
+    skipped: bool
+    embeddings: list[torch.Tensor | None] | None = None
+
+
+def pair_scores(
+    first: list[torch.Tensor | None],
+    second: list[torch.Tensor | None],
+) -> tuple[float, float] | None:
+    """Return keep/swap identity scores when both separated stems are voiced."""
+    if any(vector is None for vector in first) or any(vector is None for vector in second):
+        return None
+    assert first[0] is not None and first[1] is not None
+    assert second[0] is not None and second[1] is not None
+    keep = float(torch.dot(first[0], second[0]) + torch.dot(first[1], second[1]))
+    swap = float(torch.dot(first[0], second[1]) + torch.dot(first[1], second[0]))
+    return keep, swap
+
+
 class SingerIdentityTracker:
-    """Assign UNMIXX's permutation-ambiguous outputs to persistent tracks.
+    """Generate singer-identity embeddings for separated UNMIXX stems.
 
     The BYOL encoder was trained for singer identity, independently from
     UNMIXX.  Its TorchScript export keeps this runner independent of the
@@ -140,7 +167,6 @@ class SingerIdentityTracker:
         device: torch.device,
         input_sr: int,
         min_peak: float,
-        min_margin: float,
     ) -> None:
         model_path = hf_hub_download(
             repo_id=self.REPO_ID,
@@ -150,9 +176,6 @@ class SingerIdentityTracker:
         self.device = device
         self.input_sr = input_sr
         self.min_peak = min_peak
-        self.min_margin = min_margin
-        self.prototypes: list[torch.Tensor | None] = [None, None]
-        self.counts = [0, 0]
 
     def embeddings(self, estimates: torch.Tensor) -> list[torch.Tensor | None]:
         """Return one normalized singer embedding per sufficiently voiced stem."""
@@ -172,33 +195,215 @@ class SingerIdentityTracker:
             result[source_index] = vector
         return result
 
-    def decide(self, vectors: list[torch.Tensor | None]) -> tuple[bool, float, float] | None:
-        """Return (swap, keep score, swap score), if both tracks have evidence."""
-        if any(vector is None for vector in vectors) or any(proto is None for proto in self.prototypes):
-            return None
-        assert vectors[0] is not None and vectors[1] is not None
-        assert self.prototypes[0] is not None and self.prototypes[1] is not None
-        keep = float(torch.dot(self.prototypes[0], vectors[0]) + torch.dot(self.prototypes[1], vectors[1]))
-        swap = float(torch.dot(self.prototypes[0], vectors[1]) + torch.dot(self.prototypes[1], vectors[0]))
-        if abs(swap - keep) < self.min_margin:
-            return None
-        return swap > keep, keep, swap
 
-    def update(self, vectors: list[torch.Tensor | None]) -> None:
-        """Update only the prototype belonging to a voiced, assigned stem."""
-        for track, vector in enumerate(vectors):
-            if vector is None:
+def mean_prototype(vectors: list[torch.Tensor]) -> torch.Tensor | None:
+    if not vectors:
+        return None
+    return torch.nn.functional.normalize(torch.stack(vectors).mean(dim=0), dim=0)
+
+
+def cluster_global_prototypes(chunks: list[ChunkEstimate]) -> list[torch.Tensor | None]:
+    """Estimate two singer prototypes using all voiced, paired chunk embeddings.
+
+    This is pair-constrained two-cluster refinement: each UNMIXX chunk must
+    contribute one embedding to each identity, so leaky stems cannot be
+    independently assigned to the same singer cluster.
+    """
+    pairs = [chunk.embeddings for chunk in chunks if chunk.embeddings is not None]
+    pairs = [pair for pair in pairs if pair_scores(pair, pair) is not None]
+    if not pairs:
+        return [None, None]
+
+    # Start from the chunk whose two estimated sources are most distinct.
+    seed = min(pairs, key=lambda pair: float(torch.dot(pair[0], pair[1])))
+    assert seed[0] is not None and seed[1] is not None
+    prototypes: list[torch.Tensor | None] = [seed[0], seed[1]]
+    for _ in range(12):
+        assigned: list[list[torch.Tensor]] = [[], []]
+        for pair in pairs:
+            scores = pair_scores(prototypes, pair)
+            assert scores is not None
+            keep, swap = scores
+            order = (1, 0) if swap > keep else (0, 1)
+            for track, source in enumerate(order):
+                vector = pair[source]
+                assert vector is not None
+                assigned[track].append(vector)
+        updated = [mean_prototype(assigned[0]), mean_prototype(assigned[1])]
+        if any(vector is None for vector in updated):
+            break
+        assert prototypes[0] is not None and prototypes[1] is not None
+        shift = float(torch.dot(prototypes[0], updated[0]) + torch.dot(prototypes[1], updated[1]))
+        prototypes = updated
+        if shift > 1.9999:
+            break
+    return prototypes
+
+
+def cluster_states(
+    chunks: list[ChunkEstimate], prototypes: list[torch.Tensor | None]
+) -> list[bool | None]:
+    """Return the identity-only keep/swap choice before temporal smoothing."""
+    states: list[bool | None] = []
+    for chunk in chunks:
+        scores = pair_scores(prototypes, chunk.embeddings or [None, None])
+        states.append(None if scores is None else scores[1] > scores[0])
+    return states
+
+
+def global_assignments(
+    chunks: list[ChunkEstimate],
+    overlap_samples: int,
+    min_peak: float,
+    min_margin: float,
+) -> tuple[list[bool], list[torch.Tensor | None], dict[str, object]]:
+    """Globally choose one keep/swap state per chunk.
+
+    Reliable overlaps are high-weight transitions. Identity scores are global
+    emissions, so a voiced section after silence can inform its predecessor.
+    The two-state Viterbi pass is repeated while robust identity prototypes are
+    re-estimated from its assignments.
+    """
+    if not chunks:
+        return [], [None, None], {"initial_cluster_states": [], "iterations": []}
+    prototypes = cluster_global_prototypes(chunks)
+    states = [False] * len(chunks)
+    overlap_weight = 4.0
+    trace: dict[str, object] = {
+        "initial_cluster_states": cluster_states(chunks, prototypes),
+        "iterations": [],
+        "overlap_weight": overlap_weight,
+    }
+
+    for _ in range(8):
+        scores = torch.full((len(chunks), 2), -float("inf"), dtype=torch.float64)
+        back = torch.zeros((len(chunks), 2), dtype=torch.long)
+        chunk_trace: list[dict[str, object]] = []
+        for index, chunk in enumerate(chunks):
+            emissions = (0.0, 0.0)
+            identity_scores = pair_scores(prototypes, chunk.embeddings or [None, None])
+            if identity_scores is not None:
+                emissions = identity_scores
+            if index == 0:
+                # Global identity labels are arbitrary, so permit either
+                # orientation instead of pinning the first raw UNMIXX source.
+                scores[index, 0] = emissions[0]
+                scores[index, 1] = emissions[1]
+                chunk_trace.append(
+                    {
+                        "chunk": index,
+                        "start": chunk.start,
+                        "end": chunk.end,
+                        "skipped": chunk.skipped,
+                        "identity_keep": emissions[0],
+                        "identity_swap": emissions[1],
+                        "overlap_keep": 0.0,
+                        "overlap_swap": 0.0,
+                        "overlap_reliable": False,
+                        "score_keep": float(scores[index, 0]),
+                        "score_swap": float(scores[index, 1]),
+                        "previous_for_keep": None,
+                        "previous_for_swap": None,
+                    }
+                )
                 continue
-            prototype = self.prototypes[track]
-            # A capped running mean avoids one early chunk dominating forever,
-            # while retaining enough inertia to bridge a long silence.
-            weight = 1.0 / min(self.counts[track] + 1, 8)
-            if prototype is None:
-                updated = vector
-            else:
-                updated = torch.nn.functional.normalize((1.0 - weight) * prototype + weight * vector, dim=0)
-            self.prototypes[track] = updated
-            self.counts[track] += 1
+
+            previous = chunks[index - 1]
+            transition = (0.0, 0.0)
+            overlap_reliable = False
+            if not previous.skipped and not chunk.skipped and overlap_samples > 0:
+                overlap = min(overlap_samples, previous.estimates.shape[-1], chunk.estimates.shape[-1])
+                if overlap > 0:
+                    prev_tail = previous.estimates[:, -overlap:]
+                    cur_head = chunk.estimates[:, :overlap]
+                    _, _, keep, swap = align_two_sources(prev_tail, cur_head)
+                    reliable = (
+                        prev_tail.abs().amax() > min_peak
+                        and cur_head.abs().amax() > min_peak
+                        and abs(swap - keep) >= min_margin
+                    )
+                    if reliable:
+                        transition = (overlap_weight * keep, overlap_weight * swap)
+                        overlap_reliable = True
+
+            for state in range(2):
+                candidates = (
+                    scores[index - 1, 0] + transition[state],
+                    scores[index - 1, 1] + transition[1 - state],
+                )
+                predecessor = 0 if candidates[0] >= candidates[1] else 1
+                back[index, state] = predecessor
+                scores[index, state] = candidates[predecessor] + emissions[state]
+            chunk_trace.append(
+                {
+                    "chunk": index,
+                    "start": chunk.start,
+                    "end": chunk.end,
+                    "skipped": chunk.skipped,
+                    "identity_keep": emissions[0],
+                    "identity_swap": emissions[1],
+                    "overlap_keep": transition[0],
+                    "overlap_swap": transition[1],
+                    "overlap_reliable": overlap_reliable,
+                    "score_keep": float(scores[index, 0]),
+                    "score_swap": float(scores[index, 1]),
+                    "previous_for_keep": int(back[index, 0]),
+                    "previous_for_swap": int(back[index, 1]),
+                }
+            )
+
+        new_states = [False] * len(chunks)
+        state = 0 if scores[-1, 0] >= scores[-1, 1] else 1
+        for index in range(len(chunks) - 1, -1, -1):
+            new_states[index] = bool(state)
+            state = int(back[index, state])
+        for item, state in zip(chunk_trace, new_states):
+            item["state"] = state
+        iterations = trace["iterations"]
+        assert isinstance(iterations, list)
+        iterations.append({"states": new_states, "chunks": chunk_trace})
+
+        grouped: list[list[torch.Tensor]] = [[], []]
+        for chunk, swapped in zip(chunks, new_states):
+            vectors = chunk.embeddings
+            if vectors is None or any(vector is None for vector in vectors):
+                continue
+            order = (1, 0) if swapped else (0, 1)
+            for track, source in enumerate(order):
+                vector = vectors[source]
+                assert vector is not None
+                grouped[track].append(vector)
+        updated = [mean_prototype(grouped[0]), mean_prototype(grouped[1])]
+        if updated[0] is None or updated[1] is None or new_states == states:
+            states = new_states
+            break
+        states, prototypes = new_states, updated
+    return states, prototypes, trace
+
+
+def write_alignment_audit(output_dir: Path, trace: dict[str, object], sample_rate: int) -> None:
+    """Write the score trace and an interactive timeline for alignment review."""
+    trace["sample_rate"] = sample_rate
+    json_path = output_dir / "alignment_audit.json"
+    html_path = output_dir / "alignment_audit.html"
+    json_path.write_text(json.dumps(trace, indent=2) + "\n")
+    data = json.dumps(trace, separators=(",", ":"))
+    html_path.write_text(
+        """<meta charset="utf-8">
+<title>UNMIXX alignment audit</title>
+<style>
+body{font:14px system-ui,sans-serif;margin:24px;color:#182230;background:#fbfcfe}h1{margin:0 0 6px}p{margin:0 0 16px;color:#526070}.legend{display:flex;gap:15px;margin:12px 0}.key{display:inline-block;width:12px;height:12px;margin-right:5px}.keep{background:#287f5b}.swap{background:#b94b61}.none{background:#aeb8c4}.grid{display:grid;grid-template-columns:150px repeat(var(--chunks),minmax(22px,1fr));gap:3px;align-items:center;overflow-x:auto;padding-bottom:8px}.label{font-weight:600}.cell{height:27px;min-width:22px;border:0;cursor:pointer;color:#fff;font-weight:700}.cell.keep{background:#287f5b}.cell.swap{background:#b94b61}.cell.none{background:#aeb8c4}.cell.selected{outline:3px solid #1c4f9c;outline-offset:1px}.detail{margin-top:18px;border:1px solid #ccd5df;padding:14px;background:white;max-width:840px}.detail table{border-collapse:collapse;width:100%}.detail th,.detail td{text-align:right;padding:5px 7px;border-bottom:1px solid #e5eaf0}.detail th:first-child,.detail td:first-child{text-align:left}.warning{color:#963545;font-weight:700}</style>
+<main id="alignment-audit"><h1>Offline alignment audit</h1><p id="subtitle"></p><div class="legend"><span><i class="key keep"></i>keep</span><span><i class="key swap"></i>swap</span><span><i class="key none"></i>no identity evidence</span></div><div id="timeline" class="grid"></div><section class="detail" id="detail">Select a chunk.</section></main>
+<script>
+const trace=""" + data + """;
+const root=document.getElementById('alignment-audit');const timeline=document.getElementById('timeline');const detail=document.getElementById('detail');const iterations=trace.iterations;const initial=trace.initial_cluster_states;const n=initial.length;timeline.style.setProperty('--chunks',n);document.getElementById('subtitle').textContent=`${n} chunks · overlap weight ${trace.overlap_weight} · click any state to inspect its evidence`;
+function stateClass(v){return v===null?'none':v?'swap':'keep'}function label(v){return v===null?'—':v?'swap':'keep'}
+function row(name,states,iteration){const head=document.createElement('div');head.className='label';head.textContent=name;timeline.append(head);states.forEach((value,index)=>{const b=document.createElement('button');b.type='button';b.className=`cell ${stateClass(value)}`;b.textContent=value===null?'—':value?'S':'K';b.title=`chunk ${index+1}: ${label(value)}`;b.onclick=()=>show(index,iteration,b);timeline.append(b)})}
+row('Initial clustering',initial,-1);iterations.forEach((entry,index)=>row(`Viterbi iteration ${index+1}`,entry.states,index));
+function num(value){return value===null?'—':Number(value).toFixed(3)}function show(index,iteration,button){root.querySelectorAll('.selected').forEach(x=>x.classList.remove('selected'));button.classList.add('selected');if(iteration<0){detail.innerHTML=`<strong>Chunk ${index+1}</strong><p>Initial identity-only cluster choice: <b>${label(initial[index])}</b>. It has not yet used overlap continuity or dynamic programming.</p>`;return}const item=iterations[iteration].chunks[index];const seconds=v=>v/trace.sample_rate;const margin=item.identity_swap-item.identity_keep;const jump=index&&iterations[iteration].states[index]!==iterations[iteration].states[index-1];detail.innerHTML=`<strong>Chunk ${index+1} · Viterbi iteration ${iteration+1}</strong><p>${seconds(item.start).toFixed(2)}–${seconds(item.end).toFixed(2)} s${item.skipped?' · <span class="warning">silent / skipped</span>':''}${jump?' · <span class="warning">state changed from prior chunk</span>':''}</p><table><tr><th></th><th>keep</th><th>swap</th></tr><tr><td>identity emission</td><td>${num(item.identity_keep)}</td><td>${num(item.identity_swap)}</td></tr><tr><td>weighted overlap transition</td><td>${num(item.overlap_keep)}</td><td>${num(item.overlap_swap)}</td></tr><tr><td>Viterbi total</td><td>${num(item.score_keep)}</td><td>${num(item.score_swap)}</td></tr><tr><td>backpointer</td><td>${item.previous_for_keep===null?'—':label(Boolean(item.previous_for_keep))}</td><td>${item.previous_for_swap===null?'—':label(Boolean(item.previous_for_swap))}</td></tr></table><p>Reliable overlap: <b>${item.overlap_reliable?'yes':'no'}</b>. Identity margin (swap − keep): <b>${num(margin)}</b>. Final state in this iteration: <b>${label(item.state)}</b>.</p>`}
+</script>"""
+    )
+    print(f"[UNMIXX identity] audit: {html_path}")
 
 
 def main() -> None:
@@ -215,7 +420,7 @@ def main() -> None:
         "--identity-model",
         choices=("none", "byol", "contrastive", "contrastive-vc", "uniformity", "vicreg"),
         default="byol",
-        help="Singer-identity encoder used after ambiguous boundaries (default: byol).",
+        help="Singer-identity encoder used for global chunk assignment (default: byol).",
     )
     p.add_argument(
         "--identity-min-peak-db",
@@ -291,14 +496,10 @@ def main() -> None:
             device,
             sr,
             identity_peak_threshold,
-            args.identity_min_margin,
         )
         print(f"[UNMIXX identity] model={args.identity_model}, min-peak={args.identity_min_peak_db:g} dBFS")
 
-    accum = torch.zeros((2, total_samples), dtype=torch.float32)
-    weights = torch.zeros(total_samples, dtype=torch.float32)
-    prev_raw: torch.Tensor | None = None
-    prev_was_voiced = False
+    chunks: list[ChunkEstimate] = []
     skipped_silent_chunks = 0
 
     for idx, start in enumerate(starts):
@@ -326,99 +527,60 @@ def main() -> None:
             del x, outs
             skipped = False
 
-        swapped = False
-        identity_vectors: list[torch.Tensor | None] | None = None
-        identity_assignment_trusted = False
+        embeddings = tracker.embeddings(est) if tracker is not None and not skipped else None
+        chunks.append(ChunkEstimate(start, end, est, skipped, embeddings))
         if skipped:
             print(
                 f"  chunk {idx+1:03d}/{len(starts):03d} "
                 f"{start/sr:7.2f}-{end/sr:7.2f}s silence=skip"
             )
-        elif prev_raw is not None and prev_was_voiced and overlap_samples > 0:
-            ov = min(overlap_samples, prev_raw.shape[-1], est.shape[-1])
-            if ov > 0:
-                previous, current = prev_raw[:, -ov:], est[:, :ov]
-                _, overlap_swap, keep_score, swap_score = align_two_sources(previous, current)
-                overlap_reliable = (
-                    previous.abs().amax() > identity_peak_threshold
-                    and current.abs().amax() > identity_peak_threshold
-                    and abs(swap_score - keep_score) >= args.identity_min_margin
-                )
-                if tracker is None:
-                    # Preserve the previous continuity-only behavior when
-                    # identity tracking is explicitly disabled.
-                    swapped = overlap_swap
-                    assignment = "overlap"
-                elif overlap_reliable:
-                    swapped = overlap_swap
-                    assignment = "overlap"
-                    identity_assignment_trusted = True
-                elif tracker is not None:
-                    identity_vectors = tracker.embeddings(est)
-                    identity_decision = tracker.decide(identity_vectors)
-                    if identity_decision is not None:
-                        swapped, keep_score, swap_score = identity_decision
-                        assignment = "identity"
-                        identity_assignment_trusted = True
-                    else:
-                        assignment = "ambiguous"
-                else:
-                    assignment = "ambiguous"
-                if swapped:
-                    est = est.flip(0)
-                    if identity_vectors is not None:
-                        identity_vectors.reverse()
-                print(
-                    f"  chunk {idx+1:03d}/{len(starts):03d} "
-                    f"{start/sr:7.2f}-{end/sr:7.2f}s "
-                    f"perm={'swap' if swapped else 'keep'} via={assignment} "
-                    f"scores={keep_score:+.3f}/{swap_score:+.3f}"
-                )
-            else:
-                print(f"  chunk {idx+1:03d}/{len(starts):03d} {start/sr:7.2f}-{end/sr:7.2f}s")
         else:
-            if tracker is not None:
-                identity_vectors = tracker.embeddings(est)
-                identity_decision = tracker.decide(identity_vectors)
-                if identity_decision is not None:
-                    swapped, keep_score, swap_score = identity_decision
-                    identity_assignment_trusted = True
-                    if swapped:
-                        est = est.flip(0)
-                        identity_vectors.reverse()
-                    print(
-                        f"  chunk {idx+1:03d}/{len(starts):03d} "
-                        f"{start/sr:7.2f}-{end/sr:7.2f}s "
-                        f"perm={'swap' if swapped else 'keep'} via=identity "
-                        f"scores={keep_score:+.3f}/{swap_score:+.3f}"
-                    )
-                else:
-                    print(f"  chunk {idx+1:03d}/{len(starts):03d} {start/sr:7.2f}-{end/sr:7.2f}s")
-            else:
-                print(f"  chunk {idx+1:03d}/{len(starts):03d} {start/sr:7.2f}-{end/sr:7.2f}s")
-
-        window = make_window(
-            actual_len,
-            overlap_samples,
-            is_first=(idx == 0),
-            is_last=(idx == len(starts) - 1),
-        )
-        accum[:, start:end] += est * window.unsqueeze(0)
-        weights[start:end] += window
-        if tracker is not None and not skipped:
-            if identity_vectors is None:
-                identity_vectors = tracker.embeddings(est)
-            if all(prototype is None for prototype in tracker.prototypes):
-                # The first clearly voiced UNMIXX pair establishes arbitrary,
-                # but thereafter persistent, track identities.
-                identity_assignment_trusted = True
-            if identity_assignment_trusted:
-                tracker.update(identity_vectors)
-        prev_raw = est
-        prev_was_voiced = not skipped
+            print(f"  chunk {idx+1:03d}/{len(starts):03d} {start/sr:7.2f}-{end/sr:7.2f}s inferred")
 
         if device.type == "cuda" and (idx + 1) % 16 == 0:
             torch.cuda.empty_cache()
+
+    if tracker is None:
+        # Preserve continuity-only behavior when identity tracking is disabled.
+        states = [False] if chunks else []
+        for index in range(1, len(chunks)):
+            previous, current = chunks[index - 1], chunks[index]
+            swapped = False
+            if not previous.skipped and not current.skipped and overlap_samples > 0:
+                overlap = min(overlap_samples, previous.estimates.shape[-1], current.estimates.shape[-1])
+                if overlap > 0:
+                    _, swapped, _, _ = align_two_sources(
+                        previous.estimates[:, -overlap:], current.estimates[:, :overlap]
+                    )
+            states.append(states[-1] ^ swapped)
+        assignment_name = "overlap"
+    else:
+        print("[UNMIXX identity] globally assigning chunk permutations")
+        states, _, trace = global_assignments(
+            chunks, overlap_samples, identity_peak_threshold, args.identity_min_margin
+        )
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        write_alignment_audit(args.output_dir, trace, sr)
+        assignment_name = "global"
+
+    accum = torch.zeros((2, total_samples), dtype=torch.float32)
+    weights = torch.zeros(total_samples, dtype=torch.float32)
+    for idx, (chunk, swapped) in enumerate(zip(chunks, states)):
+        estimates = chunk.estimates.flip(0) if swapped else chunk.estimates
+        window = make_window(
+            chunk.end - chunk.start,
+            overlap_samples,
+            is_first=(idx == 0),
+            is_last=(idx == len(chunks) - 1),
+        )
+        accum[:, chunk.start:chunk.end] += estimates * window.unsqueeze(0)
+        weights[chunk.start:chunk.end] += window
+        if not chunk.skipped:
+            print(
+                f"  chunk {idx+1:03d}/{len(chunks):03d} "
+                f"{chunk.start/sr:7.2f}-{chunk.end/sr:7.2f}s "
+                f"perm={'swap' if swapped else 'keep'} via={assignment_name}"
+            )
 
     result = accum / weights.clamp_min(1e-6).unsqueeze(0)
 
