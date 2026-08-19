@@ -96,9 +96,11 @@ GAME_GLOB_FLAG = $(if $(MIDI_GLOB),--glob "$(MIDI_GLOB)")
 ifeq ($(IN_COLAB),1)
 # Colab supplies CUDA-enabled torch. Install the matching TorchAudio wheel from
 # PyTorch's CUDA index rather than allowing PyPI to select a different CUDA build.
-COLAB_TORCH_VERSION := $(shell $(PYTHON) -c 'import torch; print(torch.__version__.split("+")[0])')
+# TorchAudio 2.11 uses PyTorch's stable ABI and supports PyTorch 2.11 and newer.
+# It is the newest TorchAudio release currently published for CUDA 13.0.
+COLAB_TORCHAUDIO_VERSION ?= 2.11.0
 COLAB_TORCH_CUDA := $(shell $(PYTHON) -c 'import torch; print(torch.version.cuda.replace(".", ""))')
-INSTALL_COLAB_TORCHAUDIO = $(PYTHON) -m pip install --upgrade --force-reinstall --no-deps "torchaudio==$(COLAB_TORCH_VERSION)" --index-url "https://download.pytorch.org/whl/cu$(COLAB_TORCH_CUDA)"
+INSTALL_COLAB_TORCHAUDIO = $(PYTHON) -m pip install --upgrade --force-reinstall --no-deps "torchaudio==$(COLAB_TORCHAUDIO_VERSION)" --index-url "https://download.pytorch.org/whl/cu$(COLAB_TORCH_CUDA)"
 else
 INSTALL_COLAB_TORCHAUDIO =
 endif
