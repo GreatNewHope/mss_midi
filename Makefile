@@ -128,7 +128,7 @@ prepare-polyphonic-choir-midi: prepare polyphonic-choir-midi-dependencies
 repositories:
 	@mkdir -p "$(THIRD_PARTY)"
 	@if test -d "$(UNMIXX_REPO)/.git"; then \
-		git -C "$(UNMIXX_REPO)" checkout -- requirements.txt look2hear/models/unmixx_model.py && git -C "$(UNMIXX_REPO)" pull --ff-only; \
+		git -C "$(UNMIXX_REPO)" checkout -- requirements.txt look2hear/models/unmixx_model.py look2hear/utils/__init__.py && git -C "$(UNMIXX_REPO)" pull --ff-only; \
 	else \
 		git clone https://github.com/jihoojung0106/unmixx.git "$(UNMIXX_REPO)"; \
 	fi

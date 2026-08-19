@@ -125,6 +125,11 @@ newer PyTorch builds. This prevents a PyPI TorchAudio wheel compiled for a
 different CUDA version from being mixed with Colab's PyTorch. The first `make
 run-*` after this change repairs an already mismatched runtime automatically.
 
+The UNMIXX patch also skips an eager import of its training-only PyTorch
+Lightning progress-bar utilities. They are not used by inference but otherwise
+pull TorchMetrics and TorchVision into the model import path, where mismatched
+TorchVision CUDA builds can fail before separation begins.
+
 The supplied notebook uses these defaults and points UNMIXX at
 `/content/third_party/unmixx`. A Colab GPU runtime is required for practical
 performance. Every `make run-*` target runs `prepare` itself, so no additional

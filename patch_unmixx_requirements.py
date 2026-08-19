@@ -19,7 +19,8 @@ def main() -> None:
 
     requirements = args.unmixx_repo / "requirements.txt"
     model_file = args.unmixx_repo / "look2hear" / "models" / "unmixx_model.py"
-    if not requirements.is_file() or not model_file.is_file():
+    utils_init_file = args.unmixx_repo / "look2hear" / "utils" / "__init__.py"
+    if not requirements.is_file() or not model_file.is_file() or not utils_init_file.is_file():
         raise FileNotFoundError(f"Expected an UNMIXX repository, got: {args.unmixx_repo}")
 
     original = requirements.read_text(encoding="utf-8")
@@ -76,6 +77,31 @@ def main() -> None:
     else:
         raise RuntimeError(
             f"UNMIXX no longer has the expected Asteroid pad helper import in {model_file}. "
+            "Review this local inference patch."
+        )
+
+    upstream_lightning_import = (
+        "from .lightning_utils import print_only, RichProgressBarTheme, "
+        "MyRichProgressBar, BatchesProcessedColumn, MyMetricsTextColumn\n"
+    )
+    local_lightning_comment = (
+        "# Training-only PyTorch Lightning utilities are intentionally not imported "
+        "for inference.\n"
+    )
+    original_utils_init = utils_init_file.read_text(encoding="utf-8")
+    if upstream_lightning_import in original_utils_init:
+        utils_init_file.write_text(
+            original_utils_init.replace(
+                upstream_lightning_import, local_lightning_comment, 1
+            ),
+            encoding="utf-8",
+        )
+        print(f"Skipped UNMIXX's training-only Lightning utilities in {utils_init_file}.")
+    elif local_lightning_comment in original_utils_init:
+        print("UNMIXX's training-only Lightning utilities are already skipped.")
+    else:
+        raise RuntimeError(
+            f"UNMIXX no longer has the expected Lightning import in {utils_init_file}. "
             "Review this local inference patch."
         )
 

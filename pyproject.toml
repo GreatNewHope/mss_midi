@@ -55,7 +55,6 @@ unmixx-runtime = [
 	"matplotlib",
 	"pandas",
 	"praat-parselmouth",
-	"pytorch-lightning",
 	"rich",
 ]
 dev = [
