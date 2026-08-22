@@ -8,7 +8,10 @@ each human change is losslessly re-rendered with the original crossfades.
 
 from __future__ import annotations
 
+import base64
+import io
 import json
+from uuid import uuid4
 from pathlib import Path
 from typing import Any
 
@@ -93,11 +96,13 @@ class ChunkAlignmentReview:
         """Build and return the interactive ipywidgets view."""
         try:
             import ipywidgets as widgets
-            from IPython.display import Audio, display
+            from IPython.display import HTML, Javascript, display
         except ImportError as exc:  # pragma: no cover - depends on notebook environment
             raise ImportError("Install the alignment-review dependency group: uv sync --group alignment-review") from exc
 
         duration = self.total_samples / self.sample_rate
+        map_key = f"alignment-map-{uuid4().hex}"
+        indicator_id = f"{map_key}-indicator"
         second = widgets.FloatSlider(
             value=0.0,
             min=0.0,
@@ -112,6 +117,7 @@ class ChunkAlignmentReview:
             description="Listen to",
         )
         details = widgets.HTML()
+        playback_indicator = widgets.HTML(f"<b id='{indicator_id}'>Playback: stopped</b>")
         audio = widgets.Output()
         status = widgets.HTML()
         preview_at_second = widgets.Button(description="Play 12 s at selected second", icon="play")
@@ -140,6 +146,7 @@ class ChunkAlignmentReview:
 
         for index in range(len(self.chunks)):
             box = widgets.Button(description=str(index + 1), layout=widgets.Layout(width="38px", height="30px"))
+            box.add_class(map_key)
             box.on_click(lambda _button, index=index: toggle(index))
             boxes.append(box)
         alignment_map = widgets.GridBox(
@@ -150,6 +157,47 @@ class ChunkAlignmentReview:
         def selected_track() -> np.ndarray:
             return self.render()[int(identity.value)]
 
+        def player_widgets(
+            track: np.ndarray,
+            start_second: float = 0.0,
+            stop_second: float | None = None,
+        ) -> tuple[HTML, Javascript]:
+            """Return a browser player and Colab-compatible synchronization script."""
+            wav = io.BytesIO()
+            sf.write(wav, track, self.sample_rate, format="WAV", subtype="FLOAT")
+            encoded = base64.b64encode(wav.getvalue()).decode("ascii")
+            player_id = f"{map_key}-player-{uuid4().hex}"
+            starts = [int(chunk["start_sample"]) / self.sample_rate for chunk in self.chunks]
+            script = json.dumps({
+                "starts": starts,
+                "boxClass": map_key,
+                "indicator": indicator_id,
+                "start": start_second,
+                "stop": stop_second,
+            })
+            player = HTML(
+                f"<audio id='{player_id}' controls autoplay "
+                f"src='data:audio/wav;base64,{encoded}'></audio>"
+            )
+            sync = Javascript(
+                f"(() => {{"
+                f"const audio = document.getElementById('{player_id}'); const config = {script};"
+                f"const boxes = Array.from(document.querySelectorAll('.' + config.boxClass));"
+                f"const indicator = document.getElementById(config.indicator);"
+                f"const clear = () => boxes.forEach(box => {{ box.style.outline = ''; box.style.outlineOffset = ''; }});"
+                f"const mark = () => {{"
+                f"let index = 0; for (let i = 0; i < config.starts.length; i += 1) {{ if (audio.currentTime >= config.starts[i]) index = i; else break; }}"
+                f"clear(); if (boxes[index]) {{ boxes[index].style.outline = '3px solid #1a73e8'; boxes[index].style.outlineOffset = '2px'; }}"
+                f"if (indicator) indicator.textContent = `Playback: ${{audio.currentTime.toFixed(1)}} s · chunk ${{index + 1}}`;"
+                f"}}; audio.addEventListener('timeupdate', () => {{ mark(); if (config.stop !== null && audio.currentTime >= config.stop) audio.pause(); }});"
+                f"audio.addEventListener('play', mark);"
+                f"audio.addEventListener('ended', () => {{ clear(); if (indicator) indicator.textContent = 'Playback: stopped'; }});"
+                f"const seek = () => {{ audio.currentTime = config.start; mark(); }};"
+                f"if (audio.readyState >= 1) seek(); else audio.addEventListener('loadedmetadata', seek, {{ once: true }});"
+                f"}})()"
+            )
+            return player, sync
+
         def play_at_second(_button: object) -> None:
             track = selected_track()
             start = int(second.value * self.sample_rate)
@@ -157,21 +205,23 @@ class ChunkAlignmentReview:
             status.value = f"Playing identity {int(identity.value) + 1}, {start / self.sample_rate:.1f}–{end / self.sample_rate:.1f}s."
             with audio:
                 audio.clear_output(wait=True)
-                display(Audio(track[start:end], rate=self.sample_rate))
+                # Retain complete-timeline timestamps so the blue map indicator
+                # identifies the actual source chunk rather than excerpt index 0.
+                display(*player_widgets(track, start / self.sample_rate, end / self.sample_rate))
 
         def play_full(_button: object) -> None:
             track = selected_track()
             status.value = f"Playing complete identity {int(identity.value) + 1}."
             with audio:
                 audio.clear_output(wait=True)
-                display(Audio(track, rate=self.sample_rate))
+                display(*player_widgets(track))
 
         def play_both(_button: object) -> None:
             track_1, track_2 = self.render()
             status.value = "Playing both complete stems as separate players."
             with audio:
                 audio.clear_output(wait=True)
-                display(Audio(track_1, rate=self.sample_rate), Audio(track_2, rate=self.sample_rate))
+                display(*player_widgets(track_1), *player_widgets(track_2))
 
         def save_stems(_button: object) -> None:
             path_1, path_2 = self.save()
@@ -186,6 +236,7 @@ class ChunkAlignmentReview:
             widgets.HTML("<h3>UNMIXX chunk alignment review</h3><p>Click a chunk box to invert its online assignment.</p>"),
             alignment_map,
             details,
+            playback_indicator,
             identity,
             second,
             widgets.HBox([preview_at_second, preview_full, preview_both, save]),
