@@ -347,7 +347,9 @@ audition 12 seconds, or play either selected or both complete re-rendered
 stems. Every playback uses the complete current configuration without rerunning
 UNMIXX. **Save corrected stems** writes `spk1_corrected.wav`,
 `spk2_corrected.wav`, and the reusable `alignment_edits.json` under
-`alignment_review/corrected_stems/`. Opening the same review directory later
+`alignment_review/corrected_stems/`. **Finish alignment**, at the right of the
+controls, also saves those files and replaces `final/03_singer_01.wav` and
+`final/04_singer_02.wav` for that run. Opening the same review directory later
 automatically restores that saved red/green map.
 
 # Roadmap

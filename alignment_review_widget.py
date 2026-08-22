@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import base64
 import io
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +111,17 @@ class ChunkAlignmentReview:
         )
         return path_1, path_2
 
+    def finish(self) -> tuple[Path, Path]:
+        """Save corrections and replace this run's final singer stems."""
+        corrected_1, corrected_2 = self.save()
+        final_dir = self.review_dir.parent / "final"
+        final_dir.mkdir(parents=True, exist_ok=True)
+        final_1 = final_dir / "03_singer_01.wav"
+        final_2 = final_dir / "04_singer_02.wav"
+        shutil.copy2(corrected_1, final_1)
+        shutil.copy2(corrected_2, final_2)
+        return final_1, final_2
+
     def widget(self) -> "AlignmentReviewWidget":
         return AlignmentReviewWidget(self)
 
@@ -122,15 +133,11 @@ class AlignmentReviewWidget(anywidget.AnyWidget):
     flips = traitlets.List(trait=traitlets.Bool(), default_value=[]).tag(sync=True)
     chunk_starts = traitlets.List(trait=traitlets.Float(), default_value=[]).tag(sync=True)
     duration = traitlets.Float(0.0).tag(sync=True)
-    audio_1 = traitlets.Unicode("").tag(sync=True)
-    audio_2 = traitlets.Unicode("").tag(sync=True)
-    command = traitlets.Unicode("").tag(sync=True)
     status = traitlets.Unicode("").tag(sync=True)
 
     def __init__(self, review: ChunkAlignmentReview) -> None:
         super().__init__()
         self.review = review
-        self._render_number = 0
         self.flips = review.flips.copy()
         self.chunk_starts = [int(chunk["start_sample"]) / review.sample_rate for chunk in review.chunks]
         self.duration = review.total_samples / review.sample_rate
@@ -144,21 +151,25 @@ class AlignmentReviewWidget(anywidget.AnyWidget):
         self.review.flips = values.copy()
         self.flips = values.copy()
 
-    def _audio_data_url(self, samples: np.ndarray) -> str:
+    def _audio_wav_bytes(self, samples: np.ndarray) -> bytes:
+        """Encode compact playback audio for an AnyWidget binary message."""
         buffer = io.BytesIO()
-        sf.write(buffer, samples, self.review.sample_rate, format="WAV", subtype="FLOAT")
-        return "data:audio/wav;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+        # PCM16 is sufficient for alignment audition and halves the payload
+        # compared with the float review files.  Binary widget buffers avoid
+        # the additional base64 expansion that can freeze Colab.
+        sf.write(buffer, samples, self.review.sample_rate, format="WAV", subtype="PCM_16")
+        return buffer.getvalue()
 
     def _render_audio(self, command: dict[str, object]) -> None:
         track_1, track_2 = self.review.render()
-        self.audio_1 = self._audio_data_url(track_1)
-        self.audio_2 = self._audio_data_url(track_2)
-        # A trait notification is emitted only when its value changes. Replaying
-        # the same identity at the same second must still replace the browser's
-        # audio source after alignment edits, so make every command distinct.
-        self._render_number += 1
-        command["render_number"] = self._render_number
-        self.command = json.dumps(command)
+        if command["action"] == "play_selected":
+            identity = int(command["identity"])
+            if identity not in (0, 1):
+                raise ValueError("Selected identity must be 0 or 1")
+            buffers = [self._audio_wav_bytes((track_1, track_2)[identity])]
+        else:
+            buffers = [self._audio_wav_bytes(track_1), self._audio_wav_bytes(track_2)]
+        self.send({"type": "audio", "command": command}, buffers=buffers)
 
     def _handle_message(self, _widget: object, content: object, _buffers: object) -> None:
         if not isinstance(content, dict):
@@ -176,6 +187,9 @@ class AlignmentReviewWidget(anywidget.AnyWidget):
             elif action == "save":
                 path_1, path_2 = self.review.save()
                 self.status = f"Saved {path_1.name}, {path_2.name}, and alignment_edits.json"
+            elif action == "finish":
+                path_1, path_2 = self.review.finish()
+                self.status = f"Alignment finished: updated {path_1} and {path_2}"
         except (TypeError, ValueError) as exc:
             self.status = f"Widget request rejected: {exc}"
 

@@ -13,6 +13,7 @@ export default {
         .alignment-box.playing { outline: 3px solid #1a73e8; outline-offset: 2px; }
         .alignment-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
         .alignment-controls button { padding: 6px 10px; cursor: pointer; }
+        .alignment-finish { margin-left: auto; background: #174ea6; border: 1px solid #174ea6; border-radius: 4px; color: white; font-weight: 700; }
         .alignment-player { width: min(720px, 100%); margin-top: 8px; }
         .alignment-status { min-height: 1.3em; color: #444; }
       </style>
@@ -23,7 +24,7 @@ export default {
         <div class="alignment-controls">
           <label>Identity <select class="alignment-identity"><option value="0">1 / stem 1</option><option value="1">2 / stem 2</option></select></label>
           <label>Second <input class="alignment-second" type="range" min="0" step="0.1"><output class="alignment-second-value">0.0</output></label>
-          <button class="alignment-play-selected">Play selected stem</button><button class="alignment-play-both">Play both stems</button><button class="alignment-save">Save corrected stems</button>
+          <button class="alignment-play-selected">Play selected stem</button><button class="alignment-play-both">Play both stems</button><button class="alignment-save">Save corrected stems</button><button class="alignment-finish" title="Save corrections and replace the final singer stems">Finish alignment</button>
         </div>
         <audio class="alignment-player selected" controls></audio>
         <div class="alignment-both" hidden><audio class="alignment-player one" controls></audio><audio class="alignment-player two" controls></audio></div>
@@ -84,23 +85,27 @@ export default {
     el.querySelector(".alignment-play-selected").addEventListener("click", () => message("play_selected"));
     el.querySelector(".alignment-play-both").addEventListener("click", () => message("play_both"));
     el.querySelector(".alignment-save").addEventListener("click", () => message("save"));
+    el.querySelector(".alignment-finish").addEventListener("click", () => message("finish"));
 
     model.on("change:flips", drawMap);
     model.on("change:status", () => { status.textContent = model.get("status"); });
-    model.on("change:command", () => {
-      if (!model.get("command")) return;
-      const command = JSON.parse(model.get("command"));
+    function setAudioSource(audio, buffer, second) {
+      if (audio.alignmentUrl) URL.revokeObjectURL(audio.alignmentUrl);
+      audio.alignmentUrl = URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+      audio.onloadedmetadata = () => { audio.currentTime = second; audio.play(); };
+      audio.src = audio.alignmentUrl;
+    }
+    model.on("msg:custom", (content, buffers) => {
+      if (content.type !== "audio") return;
+      const command = content.command;
       const second = clamp(command.second || 0, 0, model.get("duration"));
       if (command.action === "play_selected") {
         both.hidden = true; selected.hidden = false;
-        selected.onloadedmetadata = () => { selected.currentTime = second; selected.play(); };
-        selected.src = Number(command.identity) === 0 ? model.get("audio_1") : model.get("audio_2");
+        setAudioSource(selected, buffers[0], second);
       } else if (command.action === "play_both") {
         selected.hidden = true; both.hidden = false;
-        let ready = 0;
-        const playWhenReady = () => { ready += 1; if (ready === 2) { playerOne.currentTime = second; playerTwo.currentTime = second; playerOne.play(); playerTwo.play(); } };
-        playerOne.onloadedmetadata = playWhenReady; playerTwo.onloadedmetadata = playWhenReady;
-        playerOne.src = model.get("audio_1"); playerTwo.src = model.get("audio_2");
+        setAudioSource(playerOne, buffers[0], second);
+        setAudioSource(playerTwo, buffers[1], second);
       }
     });
     drawMap();
