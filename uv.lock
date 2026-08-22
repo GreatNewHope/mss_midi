@@ -438,6 +438,9 @@ version = "0.1.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
+alignment-review = [
+    { name = "ipywidgets" },
+]
 choir-parts = [
     { name = "asteroid" },
 ]
@@ -487,7 +490,6 @@ unmixx-runtime = [
     { name = "pandas", version = "2.3.3", source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.5", source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "praat-parselmouth" },
-    { name = "pytorch-lightning" },
     { name = "rich" },
     { name = "torch-complex" },
     { name = "typeguard" },
@@ -496,6 +498,7 @@ unmixx-runtime = [
 [package.metadata]
 
 [package.metadata.requires-dev]
+alignment-review = [{ name = "ipywidgets", specifier = ">=8.1" }]
 choir-parts = [{ name = "asteroid" }]
 core = [
     { name = "huggingface-hub" },
@@ -528,7 +531,6 @@ unmixx-runtime = [
     { name = "packaging" },
     { name = "pandas" },
     { name = "praat-parselmouth" },
-    { name = "pytorch-lightning" },
     { name = "rich" },
     { name = "torch-complex" },
     { name = "typeguard" },
@@ -1300,6 +1302,23 @@ wheels = [
 ]
 
 [[package]]
+name = "ipywidgets"
+version = "8.1.9"
+source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
+dependencies = [
+    { name = "comm" },
+    { name = "ipython", version = "8.39.0", source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "ipython", version = "9.16.1", source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "jupyterlab-widgets" },
+    { name = "traitlets" },
+    { name = "widgetsnbextension" },
+]
+sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/c9/7c/6db60eddf38547353b06d57941f5eee22a990640ce30479fd71a810507f2/ipywidgets-8.1.9.tar.gz", hash = "sha256:bcccba38a6ec3253f7a39c943cea5b9ad01999ce071396171adbc51c6a6a8613" }
+wheels = [
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/c3/55/298e9b3b864a198234997e87a1471c1b17d7f3546ace6d18fb5cf1ce24b2/ipywidgets-8.1.9-py3-none-any.whl", hash = "sha256:f2b8cbcaae10252b809fbe4d7470db75c09b769a32cbf816d20e5ca6d3c5a79d" },
+]
+
+[[package]]
 name = "jedi"
 version = "0.20.0"
 source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
@@ -1372,6 +1391,15 @@ dependencies = [
 sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/02/49/9d1284d0dc65e2c757b74c6687b6d319b02f822ad039e5c512df9194d9dd/jupyter_core-5.9.1.tar.gz", hash = "sha256:4d09aaff303b9566c3ce657f580bd089ff5c91f5f89cf7d8846c3cdf465b5508" }
 wheels = [
     { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/e7/e7/80988e32bf6f73919a113473a604f5a8f09094de312b9d52b79c2df7612b/jupyter_core-5.9.1-py3-none-any.whl", hash = "sha256:ebf87fdc6073d142e114c72c9e29a9d7ca03fad818c5d300ce2adc1fb0743407" },
+]
+
+[[package]]
+name = "jupyterlab-widgets"
+version = "3.0.17"
+source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
+sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/21/8b/e739cf9066ad5037a2d4b0a403f06da374fdccb9748221661c8b492d3dbc/jupyterlab_widgets-3.0.17.tar.gz", hash = "sha256:6e61fe21ca8a66039180a5cc52a433e07279d2fee79c8be963e00d55193f17a8" }
+wheels = [
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/33/ef/6d27fc118f58cb24886da413545a7efb0853d405fddbfd8b2d9ac09fbed4/jupyterlab_widgets-3.0.17-py3-none-any.whl", hash = "sha256:40ac1e9955acf116c4d995d9bfa082d86ad9ec6d91c4f134827cf5e0a5eb75e0" },
 ]
 
 [[package]]
@@ -3664,6 +3692,15 @@ dependencies = [
 sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/d0/20/50ed6bdf27dec98b568a8ae25dc599f35baa3d9709f9e83fd1edb56b9a90/wheel-0.48.0.tar.gz", hash = "sha256:94800765601e9171bf5d58d066e640662842bcedcbab982b2c90787a2c987322" }
 wheels = [
     { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/2e/29/69cfbb602cd91690c55d38ba9fe53e6a7e76a6fa647bf38f19c138d25449/wheel-0.48.0-py3-none-any.whl", hash = "sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab" },
+]
+
+[[package]]
+name = "widgetsnbextension"
+version = "4.0.16"
+source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
+sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/bf/60/bc7a980fc78837d6ef8f5940cca4cadc433364503a4c4d42e2a7a0de3231/widgetsnbextension-4.0.16.tar.gz", hash = "sha256:adeea0ae78f0856ee4945f413299801b82a0a01416303301f39a704282a37b73" }
+wheels = [
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/34/95/40e17e20046b7bc820d29d09ae84ec157ec8dd6e6f6cd722626292c31b2e/widgetsnbextension-4.0.16-py3-none-any.whl", hash = "sha256:a31a8774885b96fe825462f5d6496166f0c7cae111195b6465c801d230eb5a4e" },
 ]
 
 [[package]]

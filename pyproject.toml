@@ -60,6 +60,9 @@ unmixx-runtime = [
 dev = [
 	"ipykernel>=7.3.0",
 ]
+alignment-review = [
+	"ipywidgets>=8.1",
+]
 
 [tool.setuptools]
 py-modules = []

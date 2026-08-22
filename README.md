@@ -300,6 +300,39 @@ UNMIXX's published training config uses 4-second segments. The project now uses 
 
 The chunker compares the overlapping tails/heads of both estimated sources and chooses the source permutation that maximizes continuity before overlap-adding the chunks. When that evidence is absent or ambiguous—most importantly after silence—it falls back to the BYOL singer-identity prototype tracker. This greatly reduces `singer_01` / `singer_02` swaps at chunk boundaries, although identity can still become ambiguous when separation is leaky or the embedding scores are too close.
 
+## Review and correct chunk alignment in a notebook
+
+For a song where leakage or silence still produces a wrong identity switch, ask
+Stage 3 to retain the raw estimates and its online decisions:
+
+```bash
+make run-duet INPUT=duet.wav OUTPUT_DIR=run_duet \
+  UNMIXX_ALIGNMENT_REVIEW_DIR=run_duet/alignment_review
+```
+
+This adds two small float-WAV files per UNMIXX chunk under the review directory,
+plus `alignment_manifest.json`. It is deliberately opt-in, because retaining
+the raw chunks increases disk use. The normal final stems are still written as
+usual.
+
+Install the notebook control once with `uv sync --group alignment-review`
+(or `pip install ipywidgets` in a notebook/Colab environment), then use this
+cell in a notebook opened at the project root:
+
+```python
+from alignment_review_widget import open_alignment_review
+
+open_alignment_review("run_duet/alignment_review")
+```
+
+The widget starts on the online keep/swap assignment for every chunk. Select a
+chunk, audition its current track-1/track-2 mapping, and change **Keep** or
+**Swap** when the identity is wrong. **Play current full tracks** re-renders the
+whole overlap-added alignment from the selected decisions, without rerunning
+UNMIXX. **Save corrected stems** writes `spk1_corrected.wav`,
+`spk2_corrected.wav`, and the reusable `alignment_edits.json` under
+`alignment_review/corrected_stems/`.
+
 # Roadmap
 
 ## A. Tune chunked UNMIXX / permutation tracking

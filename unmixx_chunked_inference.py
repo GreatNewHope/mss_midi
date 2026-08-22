@@ -11,6 +11,7 @@ model inference for chunks that are below a configurable silence threshold.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
 from pathlib import Path
@@ -208,6 +209,11 @@ def main() -> None:
     p.add_argument("--ckpt-path", type=Path, required=True)
     p.add_argument("--audio-path", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
+    p.add_argument(
+        "--alignment-review-dir",
+        type=Path,
+        help="Optional directory for raw chunks and online alignment decisions for notebook review.",
+    )
     p.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     p.add_argument("--chunk-seconds", type=float, default=4.0)
     p.add_argument("--overlap-seconds", type=float, default=1.0)
@@ -300,6 +306,11 @@ def main() -> None:
     prev_raw: torch.Tensor | None = None
     prev_was_voiced = False
     skipped_silent_chunks = 0
+    review_records: list[dict[str, object]] = []
+    review_dir = args.alignment_review_dir
+    if review_dir is not None:
+        review_dir.mkdir(parents=True, exist_ok=True)
+        (review_dir / "chunks").mkdir(exist_ok=True)
 
     for idx, start in enumerate(starts):
         end = min(start + chunk_samples, total_samples)
@@ -326,7 +337,18 @@ def main() -> None:
             del x, outs
             skipped = False
 
+        # Keep native (pre-permutation) estimates so human edits can be
+        # rendered without another model pass.
+        raw_chunk = est.clone()
+        if review_dir is not None:
+            chunk_dir = review_dir / "chunks"
+            save_wav(chunk_dir / f"chunk_{idx:04d}_source_01.wav", raw_chunk[0:1], sr)
+            save_wav(chunk_dir / f"chunk_{idx:04d}_source_02.wav", raw_chunk[1:2], sr)
+
         swapped = False
+        assignment = "initial"
+        keep_score: float | None = None
+        swap_score: float | None = None
         identity_vectors: list[torch.Tensor | None] | None = None
         identity_assignment_trusted = False
         if skipped:
@@ -417,6 +439,20 @@ def main() -> None:
         prev_raw = est
         prev_was_voiced = not skipped
 
+        if review_dir is not None:
+            review_records.append({
+                "index": idx,
+                "start_sample": start,
+                "end_sample": end,
+                "source_01": f"chunks/chunk_{idx:04d}_source_01.wav",
+                "source_02": f"chunks/chunk_{idx:04d}_source_02.wav",
+                "initial_swap": swapped,
+                "assignment": assignment,
+                "keep_score": keep_score,
+                "swap_score": swap_score,
+                "skipped_silence": skipped,
+            })
+
         if device.type == "cuda" and (idx + 1) % 16 == 0:
             torch.cuda.empty_cache()
 
@@ -427,6 +463,19 @@ def main() -> None:
     spk2 = args.output_dir / "spk2.wav"
     save_wav(spk1, result[0:1], sr)
     save_wav(spk2, result[1:2], sr)
+    if review_dir is not None:
+        (review_dir / "alignment_manifest.json").write_text(
+            json.dumps({
+                "format_version": 1,
+                "sample_rate": sr,
+                "total_samples": total_samples,
+                "chunk_samples": chunk_samples,
+                "overlap_samples": overlap_samples,
+                "chunks": review_records,
+            }, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(f"[UNMIXX alignment review] {review_dir / 'alignment_manifest.json'}")
     print(f"[UNMIXX chunked] skipped silent chunks: {skipped_silent_chunks}/{len(starts)}")
     print(f"[Save] {spk1}")
     print(f"[Save] {spk2}")
