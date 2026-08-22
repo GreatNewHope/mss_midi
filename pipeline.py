@@ -239,6 +239,9 @@ def separate_duet_unmixx(
     identity_model: str,
     identity_min_peak_db: float,
     identity_min_margin: float,
+    identity_global_refine: bool,
+    identity_global_min_margin: float,
+    identity_global_switch_penalty: float,
     alignment_review_dir: Path | None,
 ) -> tuple[Path, Path]:
     """Run memory-safe chunked UNMIXX inference and return two singer WAVs.
@@ -269,7 +272,11 @@ def separate_duet_unmixx(
         "--identity-model", identity_model,
         "--identity-min-peak-db", str(identity_min_peak_db),
         "--identity-min-margin", str(identity_min_margin),
+        "--identity-global-min-margin", str(identity_global_min_margin),
+        "--identity-global-switch-penalty", str(identity_global_switch_penalty),
     ]
+    if not identity_global_refine:
+        cmd += ["--no-identity-global-refine"]
     if alignment_review_dir is not None:
         cmd += ["--alignment-review-dir", str(alignment_review_dir)]
     run(cmd)
@@ -383,6 +390,9 @@ def run_pipeline(args: argparse.Namespace) -> PipelineOutputs:
             args.unmixx_identity_model,
             args.unmixx_identity_min_peak_db,
             args.unmixx_identity_min_margin,
+            args.unmixx_identity_global_refine,
+            args.unmixx_identity_global_min_margin,
+            args.unmixx_identity_global_switch_penalty,
             args.unmixx_alignment_review_dir,
         )
     else:
@@ -498,6 +508,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum singer-embedding keep/swap score difference needed to resolve an ambiguous boundary.",
     )
     p.add_argument(
+        "--unmixx-identity-global-refine",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run BYOL offline refinement to repair confident contiguous online-alignment errors (default: enabled).",
+    )
+    p.add_argument(
+        "--unmixx-identity-global-min-margin",
+        type=float,
+        default=0.02,
+        help="Minimum per-chunk BYOL margin that votes for an offline correction (default: 0.02).",
+    )
+    p.add_argument(
+        "--unmixx-identity-global-switch-penalty",
+        type=float,
+        default=0.10,
+        help="Penalty for entering or leaving an offline correction block (default: 0.10).",
+    )
+    p.add_argument(
         "--unmixx-alignment-review-dir",
         type=Path,
         help="Write raw chunks and online permutation decisions here for notebook review.",
@@ -527,6 +555,10 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         parser.error("--unmixx-identity-min-peak-db must be <= 0 dBFS")
     if args.unmixx_identity_min_margin < 0:
         parser.error("--unmixx-identity-min-margin must be >= 0")
+    if args.unmixx_identity_global_min_margin < 0:
+        parser.error("--unmixx-identity-global-min-margin must be >= 0")
+    if args.unmixx_identity_global_switch_penalty < 0:
+        parser.error("--unmixx-identity-global-switch-penalty must be >= 0")
 
 
 def main() -> None:
