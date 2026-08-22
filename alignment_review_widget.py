@@ -45,6 +45,27 @@ class ChunkAlignmentReview:
         self.initial_swaps = [bool(chunk["initial_swap"]) for chunk in self.chunks]
         # False means retain the online decision (green); True means invert it (red).
         self.flips = [False] * len(self.chunks)
+        self.restored_edits = self._load_saved_edits()
+
+    def _load_saved_edits(self) -> bool:
+        """Restore prior human decisions when they were saved for this output directory."""
+        edits_path = self.output_dir / "alignment_edits.json"
+        if not edits_path.exists():
+            return False
+        try:
+            edits = json.loads(edits_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Saved alignment edits are not valid JSON: {edits_path}") from exc
+        flips = edits.get("online_alignment_flips")
+        if (
+            edits.get("format_version") != 1
+            or not isinstance(flips, list)
+            or len(flips) != len(self.chunks)
+            or not all(isinstance(value, bool) for value in flips)
+        ):
+            raise ValueError(f"Saved alignment edits are incompatible with this review bundle: {edits_path}")
+        self.flips = flips.copy()
+        return True
 
     def _source(self, index: int, source: int) -> np.ndarray:
         samples, sample_rate = sf.read(
@@ -113,6 +134,8 @@ class AlignmentReviewWidget(anywidget.AnyWidget):
         self.flips = review.flips.copy()
         self.chunk_starts = [int(chunk["start_sample"]) / review.sample_rate for chunk in review.chunks]
         self.duration = review.total_samples / review.sample_rate
+        if review.restored_edits:
+            self.status = "Restored the previously saved alignment edits."
         self.on_msg(self._handle_message)
 
     def _apply_flips(self, values: object) -> None:

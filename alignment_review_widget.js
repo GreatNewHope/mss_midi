@@ -104,5 +104,6 @@ export default {
       }
     });
     drawMap();
+    status.textContent = model.get("status");
   },
 };
