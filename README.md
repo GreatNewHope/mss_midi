@@ -316,7 +316,7 @@ the raw chunks increases disk use. The normal final stems are still written as
 usual.
 
 Install the notebook control once with `uv sync --group alignment-review`
-(or `pip install ipywidgets` in a notebook/Colab environment). The repository
+(or `pip install anywidget` in a notebook/Colab environment). The repository
 is a collection of scripts, not an installed Python package, so in Colab add
 the repository directory explicitly before importing the widget:
 
@@ -331,7 +331,7 @@ if not (PROJECT_ROOT / "alignment_review_widget.py").exists():
     )
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Required once per Colab runtime for interactive ipywidgets controls.
+# Required once per Colab runtime for the custom AnyWidget front end.
 from google.colab import output
 output.enable_custom_widget_manager()
 

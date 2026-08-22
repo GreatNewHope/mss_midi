@@ -1,22 +1,17 @@
-"""Notebook UI for correcting UNMIXX chunk source permutations.
-
-Create a review bundle during inference with ``--alignment-review-dir`` and
-then call :func:`open_alignment_review` from a Jupyter notebook.  The bundle
-contains raw model estimates rather than the already overlap-added output, so
-each human change is losslessly re-rendered with the original crossfades.
-"""
+"""AnyWidget-based notebook UI for correcting UNMIXX chunk permutations."""
 
 from __future__ import annotations
 
 import base64
 import io
 import json
-from uuid import uuid4
 from pathlib import Path
 from typing import Any
 
+import anywidget
 import numpy as np
 import soundfile as sf
+import traitlets
 
 
 def _window(length: int, overlap: int, first: bool, last: bool) -> np.ndarray:
@@ -30,7 +25,7 @@ def _window(length: int, overlap: int, first: bool, last: bool) -> np.ndarray:
 
 
 class ChunkAlignmentReview:
-    """Stateful notebook reviewer for one ``alignment_manifest.json`` bundle."""
+    """Loads a review bundle and renders user-selected chunk permutations."""
 
     def __init__(self, review_dir: str | Path, output_dir: str | Path | None = None) -> None:
         self.review_dir = Path(review_dir).expanduser().resolve()
@@ -47,27 +42,27 @@ class ChunkAlignmentReview:
         self.total_samples = int(self.manifest["total_samples"])
         self.overlap_samples = int(self.manifest["overlap_samples"])
         self.output_dir = Path(output_dir or self.review_dir / "corrected_stems").expanduser().resolve()
-        # The UI edits are relative to the online alignment, rather than the
-        # model's native source order. Thus every box starts green even when
-        # the online process itself used a raw-source swap.
         self.initial_swaps = [bool(chunk["initial_swap"]) for chunk in self.chunks]
+        # False means retain the online decision (green); True means invert it (red).
         self.flips = [False] * len(self.chunks)
 
     def _source(self, index: int, source: int) -> np.ndarray:
-        key = f"source_{source:02d}"
-        samples, sample_rate = sf.read(self.review_dir / self.chunks[index][key], dtype="float32", always_2d=True)
+        samples, sample_rate = sf.read(
+            self.review_dir / self.chunks[index][f"source_{source:02d}"],
+            dtype="float32",
+            always_2d=True,
+        )
         if sample_rate != self.sample_rate:
             raise ValueError(f"Chunk {index} has {sample_rate} Hz, expected {self.sample_rate} Hz")
         return samples[:, 0]
 
     def render(self) -> tuple[np.ndarray, np.ndarray]:
-        """Return both currently selected, overlap-added tracks as mono arrays."""
+        """Return the two tracks for the current online-relative flips."""
         tracks = np.zeros((2, self.total_samples), dtype=np.float32)
         weights = np.zeros(self.total_samples, dtype=np.float32)
         for index, chunk in enumerate(self.chunks):
             start, end = int(chunk["start_sample"]), int(chunk["end_sample"])
-            first, last = index == 0, index == len(self.chunks) - 1
-            window = _window(end - start, self.overlap_samples, first, last)
+            window = _window(end - start, self.overlap_samples, index == 0, index == len(self.chunks) - 1)
             pair = np.stack((self._source(index, 1), self._source(index, 2)))
             if self.initial_swaps[index] ^ self.flips[index]:
                 pair = pair[::-1]
@@ -77,174 +72,85 @@ class ChunkAlignmentReview:
         return tracks[0], tracks[1]
 
     def save(self) -> tuple[Path, Path]:
-        """Write corrected stems and the editable decisions beside them."""
+        """Write corrected WAVs and a compact record of the human decisions."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         track_1, track_2 = self.render()
-        path_1, path_2 = self.output_dir / "spk1_corrected.wav", self.output_dir / "spk2_corrected.wav"
+        path_1 = self.output_dir / "spk1_corrected.wav"
+        path_2 = self.output_dir / "spk2_corrected.wav"
         sf.write(path_1, track_1, self.sample_rate, subtype="FLOAT")
         sf.write(path_2, track_2, self.sample_rate, subtype="FLOAT")
-        decisions = {
-            "format_version": 1,
-            "manifest": str((self.review_dir / "alignment_manifest.json").resolve()),
-            "online_alignment_flips": self.flips,
-            "effective_raw_swaps": [initial ^ flip for initial, flip in zip(self.initial_swaps, self.flips)],
-        }
-        (self.output_dir / "alignment_edits.json").write_text(json.dumps(decisions, indent=2) + "\n", encoding="utf-8")
+        (self.output_dir / "alignment_edits.json").write_text(
+            json.dumps({
+                "format_version": 1,
+                "manifest": str((self.review_dir / "alignment_manifest.json").resolve()),
+                "online_alignment_flips": self.flips,
+                "effective_raw_swaps": [a ^ b for a, b in zip(self.initial_swaps, self.flips)],
+            }, indent=2) + "\n",
+            encoding="utf-8",
+        )
         return path_1, path_2
 
-    def widget(self):
-        """Build and return the interactive ipywidgets view."""
+    def widget(self) -> "AlignmentReviewWidget":
+        return AlignmentReviewWidget(self)
+
+
+class AlignmentReviewWidget(anywidget.AnyWidget):
+    """Browser-owned reviewer UI; the kernel only renders and saves audio."""
+
+    _esm = Path(__file__).with_name("alignment_review_widget.js")
+    flips = traitlets.List(trait=traitlets.Bool(), default_value=[]).tag(sync=True)
+    chunk_starts = traitlets.List(trait=traitlets.Float(), default_value=[]).tag(sync=True)
+    duration = traitlets.Float(0.0).tag(sync=True)
+    audio_1 = traitlets.Unicode("").tag(sync=True)
+    audio_2 = traitlets.Unicode("").tag(sync=True)
+    command = traitlets.Unicode("").tag(sync=True)
+    status = traitlets.Unicode("").tag(sync=True)
+
+    def __init__(self, review: ChunkAlignmentReview) -> None:
+        super().__init__()
+        self.review = review
+        self.flips = review.flips.copy()
+        self.chunk_starts = [int(chunk["start_sample"]) / review.sample_rate for chunk in review.chunks]
+        self.duration = review.total_samples / review.sample_rate
+        self.on_msg(self._handle_message)
+
+    def _apply_flips(self, values: object) -> None:
+        if not isinstance(values, list) or len(values) != len(self.review.flips) or not all(isinstance(v, bool) for v in values):
+            raise ValueError("Invalid alignment flip list received from widget")
+        self.review.flips = values.copy()
+        self.flips = values.copy()
+
+    def _audio_data_url(self, samples: np.ndarray) -> str:
+        buffer = io.BytesIO()
+        sf.write(buffer, samples, self.review.sample_rate, format="WAV", subtype="FLOAT")
+        return "data:audio/wav;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+    def _render_audio(self, command: dict[str, object]) -> None:
+        track_1, track_2 = self.review.render()
+        self.audio_1 = self._audio_data_url(track_1)
+        self.audio_2 = self._audio_data_url(track_2)
+        self.command = json.dumps(command)
+
+    def _handle_message(self, _widget: object, content: object, _buffers: object) -> None:
+        if not isinstance(content, dict):
+            return
         try:
-            import ipywidgets as widgets
-            from IPython.display import HTML, Javascript, display
-        except ImportError as exc:  # pragma: no cover - depends on notebook environment
-            raise ImportError("Install the alignment-review dependency group: uv sync --group alignment-review") from exc
-
-        duration = self.total_samples / self.sample_rate
-        map_key = f"alignment-map-{uuid4().hex}"
-        indicator_id = f"{map_key}-indicator"
-        second = widgets.FloatSlider(
-            value=0.0,
-            min=0.0,
-            max=duration,
-            step=0.1,
-            description="Second",
-            continuous_update=False,
-            readout_format=".1f",
-        )
-        identity = widgets.ToggleButtons(
-            options=[("Identity 1 / stem 1", 0), ("Identity 2 / stem 2", 1)],
-            description="Listen to",
-        )
-        details = widgets.HTML()
-        playback_indicator = widgets.HTML(f"<b id='{indicator_id}'>Playback: stopped</b>")
-        audio = widgets.Output()
-        status = widgets.HTML()
-        preview_at_second = widgets.Button(description="Play 12 s at selected second", icon="play")
-        preview_full = widgets.Button(description="Play complete selected stem", icon="play")
-        preview_both = widgets.Button(description="Play both complete stems", icon="play")
-        save = widgets.Button(description="Save corrected stems", button_style="success", icon="save")
-        boxes: list[Any] = []
-
-        def refresh() -> None:
-            red = sum(self.flips)
-            details.value = (
-                f"<span style='color:#188038'>green</span> = online alignment; "
-                f"<span style='color:#d93025'>red</span> = swap it. "
-                f"{red} of {len(self.chunks)} chunks inverted."
-            )
-            for index, box in enumerate(boxes):
-                box.button_style = "danger" if self.flips[index] else "success"
-                box.tooltip = (
-                    f"Chunk {index + 1}: {'swap online alignment' if self.flips[index] else 'keep online alignment'}"
-                )
-
-        def toggle(index: int) -> None:
-            self.flips[index] = not self.flips[index]
-            refresh()
-            status.value = "<i>Unsaved change.</i>"
-
-        for index in range(len(self.chunks)):
-            box = widgets.Button(description=str(index + 1), layout=widgets.Layout(width="38px", height="30px"))
-            box.add_class(map_key)
-            box.on_click(lambda _button, index=index: toggle(index))
-            boxes.append(box)
-        alignment_map = widgets.GridBox(
-            boxes,
-            layout=widgets.Layout(grid_template_columns="repeat(auto-fill, 38px)", grid_gap="4px"),
-        )
-
-        def selected_track() -> np.ndarray:
-            return self.render()[int(identity.value)]
-
-        def player_widgets(
-            track: np.ndarray,
-            start_second: float = 0.0,
-            stop_second: float | None = None,
-        ) -> tuple[HTML, Javascript]:
-            """Return a browser player and Colab-compatible synchronization script."""
-            wav = io.BytesIO()
-            sf.write(wav, track, self.sample_rate, format="WAV", subtype="FLOAT")
-            encoded = base64.b64encode(wav.getvalue()).decode("ascii")
-            player_id = f"{map_key}-player-{uuid4().hex}"
-            starts = [int(chunk["start_sample"]) / self.sample_rate for chunk in self.chunks]
-            script = json.dumps({
-                "starts": starts,
-                "boxClass": map_key,
-                "indicator": indicator_id,
-                "start": start_second,
-                "stop": stop_second,
-            })
-            player = HTML(
-                f"<audio id='{player_id}' controls autoplay "
-                f"src='data:audio/wav;base64,{encoded}'></audio>"
-            )
-            sync = Javascript(
-                f"(() => {{"
-                f"const audio = document.getElementById('{player_id}'); const config = {script};"
-                f"const boxes = Array.from(document.querySelectorAll('.' + config.boxClass));"
-                f"const indicator = document.getElementById(config.indicator);"
-                f"const clear = () => boxes.forEach(box => {{ box.style.outline = ''; box.style.outlineOffset = ''; }});"
-                f"const mark = () => {{"
-                f"let index = 0; for (let i = 0; i < config.starts.length; i += 1) {{ if (audio.currentTime >= config.starts[i]) index = i; else break; }}"
-                f"clear(); if (boxes[index]) {{ boxes[index].style.outline = '3px solid #1a73e8'; boxes[index].style.outlineOffset = '2px'; }}"
-                f"if (indicator) indicator.textContent = `Playback: ${{audio.currentTime.toFixed(1)}} s · chunk ${{index + 1}}`;"
-                f"}}; audio.addEventListener('timeupdate', () => {{ mark(); if (config.stop !== null && audio.currentTime >= config.stop) audio.pause(); }});"
-                f"audio.addEventListener('play', mark);"
-                f"audio.addEventListener('ended', () => {{ clear(); if (indicator) indicator.textContent = 'Playback: stopped'; }});"
-                f"const seek = () => {{ audio.currentTime = config.start; mark(); }};"
-                f"if (audio.readyState >= 1) seek(); else audio.addEventListener('loadedmetadata', seek, {{ once: true }});"
-                f"}})()"
-            )
-            return player, sync
-
-        def play_at_second(_button: object) -> None:
-            track = selected_track()
-            start = int(second.value * self.sample_rate)
-            end = min(len(track), start + 12 * self.sample_rate)
-            status.value = f"Playing identity {int(identity.value) + 1}, {start / self.sample_rate:.1f}–{end / self.sample_rate:.1f}s."
-            with audio:
-                audio.clear_output(wait=True)
-                # Retain complete-timeline timestamps so the blue map indicator
-                # identifies the actual source chunk rather than excerpt index 0.
-                display(*player_widgets(track, start / self.sample_rate, end / self.sample_rate))
-
-        def play_full(_button: object) -> None:
-            track = selected_track()
-            status.value = f"Playing complete identity {int(identity.value) + 1}."
-            with audio:
-                audio.clear_output(wait=True)
-                display(*player_widgets(track))
-
-        def play_both(_button: object) -> None:
-            track_1, track_2 = self.render()
-            status.value = "Playing both complete stems as separate players."
-            with audio:
-                audio.clear_output(wait=True)
-                display(*player_widgets(track_1), *player_widgets(track_2))
-
-        def save_stems(_button: object) -> None:
-            path_1, path_2 = self.save()
-            status.value = f"<b>Saved:</b> {path_1.name}, {path_2.name}, and alignment_edits.json"
-
-        preview_at_second.on_click(play_at_second)
-        preview_full.on_click(play_full)
-        preview_both.on_click(play_both)
-        save.on_click(save_stems)
-        refresh()
-        return widgets.VBox([
-            widgets.HTML("<h3>UNMIXX chunk alignment review</h3><p>Click a chunk box to invert its online assignment.</p>"),
-            alignment_map,
-            details,
-            playback_indicator,
-            identity,
-            second,
-            widgets.HBox([preview_at_second, preview_full, preview_both, save]),
-            status,
-            audio,
-        ])
+            self._apply_flips(content.get("flips", self.flips))
+            action = content.get("action")
+            if action in {"play_selected", "play_both"}:
+                self._render_audio({
+                    "action": action,
+                    "second": float(content.get("second", 0.0)),
+                    "identity": int(content.get("identity", 0)),
+                })
+                self.status = ""
+            elif action == "save":
+                path_1, path_2 = self.review.save()
+                self.status = f"Saved {path_1.name}, {path_2.name}, and alignment_edits.json"
+        except (TypeError, ValueError) as exc:
+            self.status = f"Widget request rejected: {exc}"
 
 
-def open_alignment_review(review_dir: str | Path, output_dir: str | Path | None = None):
-    """Return a notebook-ready chunk-alignment widget for ``review_dir``."""
+def open_alignment_review(review_dir: str | Path, output_dir: str | Path | None = None) -> AlignmentReviewWidget:
+    """Create the interactive review widget for a review-bundle directory."""
     return ChunkAlignmentReview(review_dir, output_dir).widget()
