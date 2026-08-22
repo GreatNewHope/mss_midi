@@ -34,6 +34,10 @@ UNMIXX_SILENCE_THRESHOLD_DB ?= -80
 UNMIXX_IDENTITY_MODEL ?= byol
 UNMIXX_IDENTITY_MIN_PEAK_DB ?= -45
 UNMIXX_IDENTITY_MIN_MARGIN ?= 0.05
+UNMIXX_IDENTITY_GLOBAL_REFINE ?= 1
+UNMIXX_IDENTITY_GLOBAL_MIN_MARGIN ?= 0.02
+UNMIXX_IDENTITY_GLOBAL_SWITCH_PENALTY ?= 0.10
+UNMIXX_ALIGNMENT_REVIEW_DIR ?=
 CHOIR_INPUT ?=
 CHOIR_OUTPUT_DIR ?= choir_parts
 CHOIR_DEVICE ?= $(DEVICE)
@@ -176,6 +180,10 @@ run-duet duet: prepare
 		--unmixx-identity-model "$(UNMIXX_IDENTITY_MODEL)" \
 		--unmixx-identity-min-peak-db "$(UNMIXX_IDENTITY_MIN_PEAK_DB)" \
 		--unmixx-identity-min-margin "$(UNMIXX_IDENTITY_MIN_MARGIN)" \
+		$(if $(filter 0 false no,$(UNMIXX_IDENTITY_GLOBAL_REFINE)),--no-unmixx-identity-global-refine,) \
+		--unmixx-identity-global-min-margin "$(UNMIXX_IDENTITY_GLOBAL_MIN_MARGIN)" \
+		--unmixx-identity-global-switch-penalty "$(UNMIXX_IDENTITY_GLOBAL_SWITCH_PENALTY)" \
+		$(if $(UNMIXX_ALIGNMENT_REVIEW_DIR),--unmixx-alignment-review-dir "$(UNMIXX_ALIGNMENT_REVIEW_DIR)") \
 		--output-dir "$(OUTPUT_DIR)"
 
 run-full full: prepare
@@ -190,6 +198,10 @@ run-full full: prepare
 		--unmixx-identity-model "$(UNMIXX_IDENTITY_MODEL)" \
 		--unmixx-identity-min-peak-db "$(UNMIXX_IDENTITY_MIN_PEAK_DB)" \
 		--unmixx-identity-min-margin "$(UNMIXX_IDENTITY_MIN_MARGIN)" \
+		$(if $(filter 0 false no,$(UNMIXX_IDENTITY_GLOBAL_REFINE)),--no-unmixx-identity-global-refine,) \
+		--unmixx-identity-global-min-margin "$(UNMIXX_IDENTITY_GLOBAL_MIN_MARGIN)" \
+		--unmixx-identity-global-switch-penalty "$(UNMIXX_IDENTITY_GLOBAL_SWITCH_PENALTY)" \
+		$(if $(UNMIXX_ALIGNMENT_REVIEW_DIR),--unmixx-alignment-review-dir "$(UNMIXX_ALIGNMENT_REVIEW_DIR)") \
 		--output-dir "$(OUTPUT_DIR)"
 
 run-choir-parts choir-parts: prepare-choir-parts

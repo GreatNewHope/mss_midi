@@ -298,7 +298,64 @@ Those operations can remove cues that help distinguish the two singers.
 
 UNMIXX's published training config uses 4-second segments. The project now uses **4-second chunks with 1-second overlap by default**. This prevents full-song attention tensors from exhausting GPU memory and is closer to the model's training regime.
 
-The chunker compares the overlapping tails/heads of both estimated sources and chooses the source permutation that maximizes continuity before overlap-adding the chunks. When that evidence is absent or ambiguous—most importantly after silence—it falls back to the BYOL singer-identity prototype tracker. This greatly reduces `singer_01` / `singer_02` swaps at chunk boundaries, although identity can still become ambiguous when separation is leaky or the embedding scores are too close.
+The chunker first compares the overlapping tails/heads of both estimated sources and chooses the source permutation that maximizes continuity. When that evidence is absent or ambiguous—most importantly after silence—it falls back to the BYOL singer-identity prototype tracker.
+
+After the online pass, the default offline BYOL refinement evaluates every raw chunk against global identity prototypes. It uses a two-state sequence solver to invert only coherent, contiguous runs of online decisions: a persistent wrong assignment after silence or leakage can be corrected as one block, while an isolated weak embedding cannot cause a swap. Low-evidence chunks at the end of a strong run inherit that run until a confident contrary embedding is found. This post-pass uses temporary raw-chunk files (or reuses `UNMIXX_ALIGNMENT_REVIEW_DIR`), does not rerun UNMIXX, and deletes its temporary cache after writing the final stems.
+
+It is enabled with `UNMIXX_IDENTITY_GLOBAL_REFINE=1` by default. Tune its per-chunk evidence gate and block-boundary penalty with `UNMIXX_IDENTITY_GLOBAL_MIN_MARGIN=0.02` and `UNMIXX_IDENTITY_GLOBAL_SWITCH_PENALTY=0.10`; set `UNMIXX_IDENTITY_GLOBAL_REFINE=0` to retain online-only behavior.
+
+## Review and correct chunk alignment in a notebook
+
+For a song where leakage or silence still produces a wrong identity switch, ask
+Stage 3 to retain the raw estimates and its online decisions:
+
+```bash
+make run-duet INPUT=duet.wav OUTPUT_DIR=run_duet \
+  UNMIXX_ALIGNMENT_REVIEW_DIR=run_duet/alignment_review
+```
+
+This adds two small float-WAV files per UNMIXX chunk under the review directory,
+plus `alignment_manifest.json`. It is deliberately opt-in, because retaining
+the raw chunks increases disk use. The normal final stems are still written as
+usual.
+
+Install the notebook control once with `uv sync --group alignment-review`
+(or `pip install anywidget` in a notebook/Colab environment). The repository
+is a collection of scripts, not an installed Python package, so in Colab add
+the repository directory explicitly before importing the widget:
+
+```python
+from pathlib import Path
+import sys
+
+PROJECT_ROOT = Path("/content/mss_midi")
+if not (PROJECT_ROOT / "alignment_review_widget.py").exists():
+    raise FileNotFoundError(
+        "alignment_review_widget.py is not in this Colab checkout; update or copy the project files first."
+    )
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# Required once per Colab runtime for the custom AnyWidget front end.
+from google.colab import output
+output.enable_custom_widget_manager()
+
+from alignment_review_widget import open_alignment_review
+
+open_alignment_review(PROJECT_ROOT / "run_duet/alignment_review")
+```
+
+The widget starts with one green box per chunk, representing the final
+automatic assignment after online and offline alignment. The manifest also
+retains the online decision and any offline BYOL correction for diagnosis.
+Click a box to turn it red and invert only that automatic assignment. Select an identity and a time with the controls below the map to
+audition 12 seconds, or play either selected or both complete re-rendered
+stems. Every playback uses the complete current configuration without rerunning
+UNMIXX. **Save corrected stems** writes `spk1_corrected.wav`,
+`spk2_corrected.wav`, and the reusable `alignment_edits.json` under
+`alignment_review/corrected_stems/`. **Finish alignment**, at the right of the
+controls, also saves those files and replaces `final/03_singer_01.wav` and
+`final/04_singer_02.wav` for that run. Opening the same review directory later
+automatically restores that saved red/green map.
 
 # Roadmap
 

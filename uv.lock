@@ -136,6 +136,20 @@ wheels = [
 ]
 
 [[package]]
+name = "anywidget"
+version = "0.11.0"
+source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
+dependencies = [
+    { name = "ipywidgets" },
+    { name = "psygnal" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/79/31/0491d707c674b34267f55d96d6a7148e55e7b6718a271686232cf295fbe2/anywidget-0.11.0.tar.gz", hash = "sha256:6695fbef9449cf8c27f421b96c5837aa37f909ec1f60cfa33add333e1b70b169" }
+wheels = [
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/8e/c2/8fec8e8e2eb920cc2280f569144080cd58622a2eda83bfa4c0c354a63264/anywidget-0.11.0-py3-none-any.whl", hash = "sha256:c574d9acc6503ad27b37a9acea48f957a8ba7c9c9876cfcb37898931c098ce9d" },
+]
+
+[[package]]
 name = "appnope"
 version = "0.1.4"
 source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
@@ -438,6 +452,9 @@ version = "0.1.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
+alignment-review = [
+    { name = "anywidget" },
+]
 choir-parts = [
     { name = "asteroid" },
 ]
@@ -450,6 +467,7 @@ core = [
     { name = "torchaudio" },
 ]
 dev = [
+    { name = "anywidget" },
     { name = "ipykernel" },
 ]
 mss-runtime = [
@@ -487,7 +505,6 @@ unmixx-runtime = [
     { name = "pandas", version = "2.3.3", source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.5", source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "praat-parselmouth" },
-    { name = "pytorch-lightning" },
     { name = "rich" },
     { name = "torch-complex" },
     { name = "typeguard" },
@@ -496,6 +513,7 @@ unmixx-runtime = [
 [package.metadata]
 
 [package.metadata.requires-dev]
+alignment-review = [{ name = "anywidget", specifier = ">=0.11" }]
 choir-parts = [{ name = "asteroid" }]
 core = [
     { name = "huggingface-hub" },
@@ -505,7 +523,10 @@ core = [
     { name = "torch" },
     { name = "torchaudio" },
 ]
-dev = [{ name = "ipykernel", specifier = ">=7.3.0" }]
+dev = [
+    { name = "anywidget" },
+    { name = "ipykernel", specifier = ">=7.3.0" },
+]
 mss-runtime = [
     { name = "beartype", specifier = "==0.14.1" },
     { name = "einops", specifier = "==0.8.1" },
@@ -528,7 +549,6 @@ unmixx-runtime = [
     { name = "packaging" },
     { name = "pandas" },
     { name = "praat-parselmouth" },
-    { name = "pytorch-lightning" },
     { name = "rich" },
     { name = "torch-complex" },
     { name = "typeguard" },
@@ -1300,6 +1320,23 @@ wheels = [
 ]
 
 [[package]]
+name = "ipywidgets"
+version = "8.1.9"
+source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
+dependencies = [
+    { name = "comm" },
+    { name = "ipython", version = "8.39.0", source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "ipython", version = "9.16.1", source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "jupyterlab-widgets" },
+    { name = "traitlets" },
+    { name = "widgetsnbextension" },
+]
+sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/c9/7c/6db60eddf38547353b06d57941f5eee22a990640ce30479fd71a810507f2/ipywidgets-8.1.9.tar.gz", hash = "sha256:bcccba38a6ec3253f7a39c943cea5b9ad01999ce071396171adbc51c6a6a8613" }
+wheels = [
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/c3/55/298e9b3b864a198234997e87a1471c1b17d7f3546ace6d18fb5cf1ce24b2/ipywidgets-8.1.9-py3-none-any.whl", hash = "sha256:f2b8cbcaae10252b809fbe4d7470db75c09b769a32cbf816d20e5ca6d3c5a79d" },
+]
+
+[[package]]
 name = "jedi"
 version = "0.20.0"
 source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
@@ -1372,6 +1409,15 @@ dependencies = [
 sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/02/49/9d1284d0dc65e2c757b74c6687b6d319b02f822ad039e5c512df9194d9dd/jupyter_core-5.9.1.tar.gz", hash = "sha256:4d09aaff303b9566c3ce657f580bd089ff5c91f5f89cf7d8846c3cdf465b5508" }
 wheels = [
     { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/e7/e7/80988e32bf6f73919a113473a604f5a8f09094de312b9d52b79c2df7612b/jupyter_core-5.9.1-py3-none-any.whl", hash = "sha256:ebf87fdc6073d142e114c72c9e29a9d7ca03fad818c5d300ce2adc1fb0743407" },
+]
+
+[[package]]
+name = "jupyterlab-widgets"
+version = "3.0.17"
+source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
+sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/21/8b/e739cf9066ad5037a2d4b0a403f06da374fdccb9748221661c8b492d3dbc/jupyterlab_widgets-3.0.17.tar.gz", hash = "sha256:6e61fe21ca8a66039180a5cc52a433e07279d2fee79c8be963e00d55193f17a8" }
+wheels = [
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/33/ef/6d27fc118f58cb24886da413545a7efb0853d405fddbfd8b2d9ac09fbed4/jupyterlab_widgets-3.0.17-py3-none-any.whl", hash = "sha256:40ac1e9955acf116c4d995d9bfa082d86ad9ec6d91c4f134827cf5e0a5eb75e0" },
 ]
 
 [[package]]
@@ -2693,6 +2739,30 @@ wheels = [
 ]
 
 [[package]]
+name = "psygnal"
+version = "0.15.1"
+source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
+sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/4e/79/20c3e23e75272e9ddf018097cf872ab088bccba978888472656629efa4a3/psygnal-0.15.1.tar.gz", hash = "sha256:f64f62dee2306fc1c22050a59b6c6cdad126e04b0cf50e393ff858a1da719096" }
+wheels = [
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/e6/44/ab13cb6147d010258826a43e574ad94599af0de29df13795fff9efee656c/psygnal-0.15.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:8ee55e3997f796fd84d4fdbd829bb1b19d323e087c43d072744604a3016c8851" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/f2/a2/68c042a607ca613e9450dfee99cc5c2a4d10d95392fb1de2ba932dd0a605/psygnal-0.15.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:912bcf110bfe7b4aa121d24987b6a58afb967ff090a049dad136eaf3cbcc7bea" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/4b/86/123c7b169ad32994a0cd801cd1f11c1a2be84555807e9c8a8a4682c67a9f/psygnal-0.15.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b2e860c11fe075fd80c93a24081c577ef7ec5c9da41f0e75990aa4cccf3f79cf" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/20/f1/886cec7bec2f27fe453cfa32bfcaac08a83aab2a04895af68f93e1c493b8/psygnal-0.15.1-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:d5b8bebcf99699ef50b6ef572868a490f6d191dc4466e5bd9818ca27e17cd581" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/21/a3/da972a05568ee8a9dc6c6567bee2c0cc5af8c681baebcb9fdbbf3cceb4f7/psygnal-0.15.1-cp310-cp310-win_amd64.whl", hash = "sha256:06e0a90490e1205620d97ac52fbbe3282a22b126a26d02b3e1196bb46de16c7a" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/bb/a7/69495410025cc4298765545ce3b8c635cd4c8d3a362b7fbbc15b80e9fc8f/psygnal-0.15.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:1adc41515f648696990964433f1e25d8dfd306813a3645366c85e01986ba57a0" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/75/1f/19a8126ccf3cd3974ba5d08a435a049b666961d90f5848ba83599d7a29de/psygnal-0.15.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:38ff18455b2ac73d4e8eea82ef298ce904b52e4dfdc603a24380c9c440e37519" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/54/c5/b1348880d603edb82128a721397a1ddcf3dfcf5384fe5689db6e471118ae/psygnal-0.15.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c923c322eeefb1140886927cfe7bda7c32341087e290e812b9c69a624ab72d54" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/e6/42/3da2d6f3583bd1a849f7faa2fd3492b14bfda05012519ceaea5992658af0/psygnal-0.15.1-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:2714ddaa41ea3134c0ee91cebd5fb11a88f254ea1d5948806ab0ad5f8be603d5" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/4d/14/6fc7e97fdecf7e8c5c105684bab784920312a3259800d8b53e3cf8783f42/psygnal-0.15.1-cp311-cp311-win_amd64.whl", hash = "sha256:877516056a5a383427a647fff2fad5179eaa3e12de2c083c273e748435414aef" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/76/65/b7bbca96bc477aa9ac2264e5907b2f4ccfcd1319f776dd1f35eec06cc2f4/psygnal-0.15.1-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:8d56f0f35eaf4a21f660de76885222faf9e8c7112454528d3394d464f3d4d1a3" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/40/f2/56577465a1b42a5e6780bb5fab53fb68f8bfd72f0131ed397576529af724/psygnal-0.15.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:0febcf757a1323d9b8bd75735ee3569213d8110012a7bf0f478e85c5ab459fc6" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/79/81/f642ac08104049383076f83480ed412c9626e068769a1c34873c595bec0e/psygnal-0.15.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b5e4837dfbfa4974dabe0795e32be9aadcd87603adf734738ce1114f72238a05" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/de/43/e571fa40b72780abed080ef829e5ad98017b6fe48d28c15a2404e006b676/psygnal-0.15.1-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:07b4c4e03bbf4e8cad7e25f4fbc1ba9575fb9c3d14991bc7edfeb8b09c8d6d54" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/e3/26/ef3ab825eb08eaecbbceeeb56383694fe64ce399dbfd1d0767bb85688785/psygnal-0.15.1-cp312-cp312-win_amd64.whl", hash = "sha256:4f0ce91b9c18e92281bf2c3fc4bb4e808d90f0b023d0a37b302d354188520338" },
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/46/49/7742544684bee728ec123515d2694cee859aa2a705951a461230b00f18cc/psygnal-0.15.1-py3-none-any.whl", hash = "sha256:4221140e633e45b076953c64bcb9b41a744833527f9a037c1ca98bc270798cbf" },
+]
+
+[[package]]
 name = "ptyprocess"
 version = "0.7.0"
 source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
@@ -3664,6 +3734,15 @@ dependencies = [
 sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/d0/20/50ed6bdf27dec98b568a8ae25dc599f35baa3d9709f9e83fd1edb56b9a90/wheel-0.48.0.tar.gz", hash = "sha256:94800765601e9171bf5d58d066e640662842bcedcbab982b2c90787a2c987322" }
 wheels = [
     { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/2e/29/69cfbb602cd91690c55d38ba9fe53e6a7e76a6fa647bf38f19c138d25449/wheel-0.48.0-py3-none-any.whl", hash = "sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab" },
+]
+
+[[package]]
+name = "widgetsnbextension"
+version = "4.0.16"
+source = { registry = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/simple" }
+sdist = { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/bf/60/bc7a980fc78837d6ef8f5940cca4cadc433364503a4c4d42e2a7a0de3231/widgetsnbextension-4.0.16.tar.gz", hash = "sha256:adeea0ae78f0856ee4945f413299801b82a0a01416303301f39a704282a37b73" }
+wheels = [
+    { url = "https://artifactory.globaldevtools.bbva.com/artifactory/api/pypi/gl-datio-runtime-pypi-virtual/packages/packages/34/95/40e17e20046b7bc820d29d09ae84ec157ec8dd6e6f6cd722626292c31b2e/widgetsnbextension-4.0.16-py3-none-any.whl", hash = "sha256:a31a8774885b96fe825462f5d6496166f0c7cae111195b6465c801d230eb5a4e" },
 ]
 
 [[package]]
