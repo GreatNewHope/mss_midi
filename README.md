@@ -316,19 +316,35 @@ the raw chunks increases disk use. The normal final stems are still written as
 usual.
 
 Install the notebook control once with `uv sync --group alignment-review`
-(or `pip install ipywidgets` in a notebook/Colab environment), then use this
-cell in a notebook opened at the project root:
+(or `pip install ipywidgets` in a notebook/Colab environment). The repository
+is a collection of scripts, not an installed Python package, so in Colab add
+the repository directory explicitly before importing the widget:
 
 ```python
+from pathlib import Path
+import sys
+
+PROJECT_ROOT = Path("/content/mss_midi")
+if not (PROJECT_ROOT / "alignment_review_widget.py").exists():
+    raise FileNotFoundError(
+        "alignment_review_widget.py is not in this Colab checkout; update or copy the project files first."
+    )
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# Required once per Colab runtime for interactive ipywidgets controls.
+from google.colab import output
+output.enable_custom_widget_manager()
+
 from alignment_review_widget import open_alignment_review
 
-open_alignment_review("run_duet/alignment_review")
+open_alignment_review(PROJECT_ROOT / "run_duet/alignment_review")
 ```
 
-The widget starts on the online keep/swap assignment for every chunk. Select a
-chunk, audition its current track-1/track-2 mapping, and change **Keep** or
-**Swap** when the identity is wrong. **Play current full tracks** re-renders the
-whole overlap-added alignment from the selected decisions, without rerunning
+The widget starts with one green box per chunk, representing the online
+assignment. Click a box to turn it red and invert only that chunk's online
+assignment. Select an identity and a time with the controls below the map to
+audition 12 seconds, or play either selected or both complete re-rendered
+stems. Every playback uses the complete current configuration without rerunning
 UNMIXX. **Save corrected stems** writes `spk1_corrected.wav`,
 `spk2_corrected.wav`, and the reusable `alignment_edits.json` under
 `alignment_review/corrected_stems/`.

@@ -44,9 +44,11 @@ class ChunkAlignmentReview:
         self.total_samples = int(self.manifest["total_samples"])
         self.overlap_samples = int(self.manifest["overlap_samples"])
         self.output_dir = Path(output_dir or self.review_dir / "corrected_stems").expanduser().resolve()
-        # A selection is relative to the model's native source order, not to a
-        # preceding chunk. This makes every correction independent and reversible.
-        self.swaps = [bool(chunk["initial_swap"]) for chunk in self.chunks]
+        # The UI edits are relative to the online alignment, rather than the
+        # model's native source order. Thus every box starts green even when
+        # the online process itself used a raw-source swap.
+        self.initial_swaps = [bool(chunk["initial_swap"]) for chunk in self.chunks]
+        self.flips = [False] * len(self.chunks)
 
     def _source(self, index: int, source: int) -> np.ndarray:
         key = f"source_{source:02d}"
@@ -64,7 +66,7 @@ class ChunkAlignmentReview:
             first, last = index == 0, index == len(self.chunks) - 1
             window = _window(end - start, self.overlap_samples, first, last)
             pair = np.stack((self._source(index, 1), self._source(index, 2)))
-            if self.swaps[index]:
+            if self.initial_swaps[index] ^ self.flips[index]:
                 pair = pair[::-1]
             tracks[:, start:end] += pair * window
             weights[start:end] += window
@@ -81,7 +83,8 @@ class ChunkAlignmentReview:
         decisions = {
             "format_version": 1,
             "manifest": str((self.review_dir / "alignment_manifest.json").resolve()),
-            "swaps": self.swaps,
+            "online_alignment_flips": self.flips,
+            "effective_raw_swaps": [initial ^ flip for initial, flip in zip(self.initial_swaps, self.flips)],
         }
         (self.output_dir / "alignment_edits.json").write_text(json.dumps(decisions, indent=2) + "\n", encoding="utf-8")
         return path_1, path_2
@@ -94,40 +97,78 @@ class ChunkAlignmentReview:
         except ImportError as exc:  # pragma: no cover - depends on notebook environment
             raise ImportError("Install the alignment-review dependency group: uv sync --group alignment-review") from exc
 
-        chunk = widgets.IntSlider(value=0, min=0, max=len(self.chunks) - 1, description="Chunk", continuous_update=False)
-        decision = widgets.ToggleButtons(options=[("Keep: raw 1 → track 1", False), ("Swap: raw 2 → track 1", True)], description="Mapping")
+        duration = self.total_samples / self.sample_rate
+        second = widgets.FloatSlider(
+            value=0.0,
+            min=0.0,
+            max=duration,
+            step=0.1,
+            description="Second",
+            continuous_update=False,
+            readout_format=".1f",
+        )
+        identity = widgets.ToggleButtons(
+            options=[("Identity 1 / stem 1", 0), ("Identity 2 / stem 2", 1)],
+            description="Listen to",
+        )
         details = widgets.HTML()
         audio = widgets.Output()
         status = widgets.HTML()
-        preview_chunk = widgets.Button(description="Play selected chunk", icon="play")
-        preview_full = widgets.Button(description="Play current full tracks", icon="play")
+        preview_at_second = widgets.Button(description="Play 12 s at selected second", icon="play")
+        preview_full = widgets.Button(description="Play complete selected stem", icon="play")
+        preview_both = widgets.Button(description="Play both complete stems", icon="play")
         save = widgets.Button(description="Save corrected stems", button_style="success", icon="save")
+        boxes: list[Any] = []
 
-        def refresh(*_ignored: object) -> None:
-            item = self.chunks[chunk.value]
-            decision.value = self.swaps[chunk.value]
-            start, end = int(item["start_sample"]) / self.sample_rate, int(item["end_sample"]) / self.sample_rate
-            scores = "—" if item["keep_score"] is None else f"keep {item['keep_score']:+.3f}; swap {item['swap_score']:+.3f}"
+        def refresh() -> None:
+            red = sum(self.flips)
             details.value = (
-                f"<b>{start:.2f}–{end:.2f}s</b> · online: <b>{'swap' if item['initial_swap'] else 'keep'}</b> "
-                f"via {item['assignment']} · scores: {scores}"
+                f"<span style='color:#188038'>green</span> = online alignment; "
+                f"<span style='color:#d93025'>red</span> = swap it. "
+                f"{red} of {len(self.chunks)} chunks inverted."
             )
+            for index, box in enumerate(boxes):
+                box.button_style = "danger" if self.flips[index] else "success"
+                box.tooltip = (
+                    f"Chunk {index + 1}: {'swap online alignment' if self.flips[index] else 'keep online alignment'}"
+                )
 
-        def choose(change: dict[str, Any]) -> None:
-            if change["name"] == "value":
-                self.swaps[chunk.value] = bool(change["new"])
-                status.value = "<i>Unsaved change.</i>"
+        def toggle(index: int) -> None:
+            self.flips[index] = not self.flips[index]
+            refresh()
+            status.value = "<i>Unsaved change.</i>"
 
-        def play_selected(_button: object) -> None:
-            pair = (self._source(chunk.value, 1), self._source(chunk.value, 2))
-            if self.swaps[chunk.value]:
-                pair = pair[::-1]
+        for index in range(len(self.chunks)):
+            box = widgets.Button(description=str(index + 1), layout=widgets.Layout(width="38px", height="30px"))
+            box.on_click(lambda _button, index=index: toggle(index))
+            boxes.append(box)
+        alignment_map = widgets.GridBox(
+            boxes,
+            layout=widgets.Layout(grid_template_columns="repeat(auto-fill, 38px)", grid_gap="4px"),
+        )
+
+        def selected_track() -> np.ndarray:
+            return self.render()[int(identity.value)]
+
+        def play_at_second(_button: object) -> None:
+            track = selected_track()
+            start = int(second.value * self.sample_rate)
+            end = min(len(track), start + 12 * self.sample_rate)
+            status.value = f"Playing identity {int(identity.value) + 1}, {start / self.sample_rate:.1f}–{end / self.sample_rate:.1f}s."
             with audio:
                 audio.clear_output(wait=True)
-                display(Audio(pair[0], rate=self.sample_rate), Audio(pair[1], rate=self.sample_rate))
+                display(Audio(track[start:end], rate=self.sample_rate))
 
         def play_full(_button: object) -> None:
+            track = selected_track()
+            status.value = f"Playing complete identity {int(identity.value) + 1}."
+            with audio:
+                audio.clear_output(wait=True)
+                display(Audio(track, rate=self.sample_rate))
+
+        def play_both(_button: object) -> None:
             track_1, track_2 = self.render()
+            status.value = "Playing both complete stems as separate players."
             with audio:
                 audio.clear_output(wait=True)
                 display(Audio(track_1, rate=self.sample_rate), Audio(track_2, rate=self.sample_rate))
@@ -136,18 +177,18 @@ class ChunkAlignmentReview:
             path_1, path_2 = self.save()
             status.value = f"<b>Saved:</b> {path_1.name}, {path_2.name}, and alignment_edits.json"
 
-        chunk.observe(refresh, names="value")
-        decision.observe(choose, names="value")
-        preview_chunk.on_click(play_selected)
+        preview_at_second.on_click(play_at_second)
         preview_full.on_click(play_full)
+        preview_both.on_click(play_both)
         save.on_click(save_stems)
         refresh()
         return widgets.VBox([
-            widgets.HTML("<h3>UNMIXX chunk alignment review</h3><p>Each audio player is track 1 then track 2.</p>"),
-            chunk,
-            decision,
+            widgets.HTML("<h3>UNMIXX chunk alignment review</h3><p>Click a chunk box to invert its online assignment.</p>"),
+            alignment_map,
             details,
-            widgets.HBox([preview_chunk, preview_full, save]),
+            identity,
+            second,
+            widgets.HBox([preview_at_second, preview_full, preview_both, save]),
             status,
             audio,
         ])
