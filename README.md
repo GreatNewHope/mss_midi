@@ -214,6 +214,56 @@ python pipeline.py already_isolated_vocals.wav \
   --output-dir run_existing_vocals
 ```
 
+## Three simultaneous lead singers: Colab experiments
+
+`three_singer_experiments.sh` runs two diagnostic experiments for a song
+with three lead singers and no backing choir. It is intentionally not a
+three-singer production pipeline: the available UNMIXX checkpoint has two
+outputs, so the purpose is to test whether its two outputs form a stable
+one-singer plus two-singer grouping.
+
+In a CUDA Colab runtime, clone or upload this repository, place the song in
+the runtime, then run:
+
+```bash
+make prepare
+bash three_singer_experiments.sh \
+  --input "songs/hadestown/Anaïs Mitchell - Hadestown - Original Broadway Cast Recording - 15 - When the Chips Are Down.flac" \
+  --output-dir experiments/when_the_chips_are_down \
+  --device cuda
+```
+
+The script runs Mel-Band RoFormer exactly once, then reuses
+`mega53_split/final/00_all_vocals.wav` for every later experiment:
+
+```text
+Experiment 1: all vocals -> Mega53 lead-vocal / back-vocal
+              back-vocal -> UNMIXX
+
+Experiment 2: all vocals -> UNMIXX
+```
+
+For Experiment 1, audition `mega53_split/final/02_lead_vocal.wav`: it must
+contain one singer only. Then confirm that the two outputs under
+`mega53_backing_unmixx/final/` each contain one of the other two singers.
+
+For Experiment 2, audition both direct UNMIXX outputs across the full song.
+If one is consistently a two-singer remainder, run the optional recursive
+test explicitly, substituting the confirmed output name:
+
+```bash
+bash three_singer_experiments.sh \
+  --output-dir experiments/when_the_chips_are_down \
+  --device cuda \
+  --recursive-only \
+  --recursive-remainder singer_01
+```
+
+The script never guesses that choice: UNMIXX output order is arbitrary and a
+false recursive choice would make the result look plausible while splitting
+the wrong mixture. Each UNMIXX run writes its chunk-level alignment artifacts
+under `review/` for diagnosing identity swaps.
+
 # Final outputs
 
 Outputs depend on the selected mode:
