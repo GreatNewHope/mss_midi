@@ -467,6 +467,7 @@ core = [
     { name = "torchaudio" },
 ]
 dev = [
+    { name = "anywidget" },
     { name = "ipykernel" },
 ]
 mss-runtime = [
@@ -522,7 +523,10 @@ core = [
     { name = "torch" },
     { name = "torchaudio" },
 ]
-dev = [{ name = "ipykernel", specifier = ">=7.3.0" }]
+dev = [
+    { name = "anywidget" },
+    { name = "ipykernel", specifier = ">=7.3.0" },
+]
 mss-runtime = [
     { name = "beartype", specifier = "==0.14.1" },
     { name = "einops", specifier = "==0.8.1" },
