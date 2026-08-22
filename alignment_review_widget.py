@@ -109,6 +109,7 @@ class AlignmentReviewWidget(anywidget.AnyWidget):
     def __init__(self, review: ChunkAlignmentReview) -> None:
         super().__init__()
         self.review = review
+        self._render_number = 0
         self.flips = review.flips.copy()
         self.chunk_starts = [int(chunk["start_sample"]) / review.sample_rate for chunk in review.chunks]
         self.duration = review.total_samples / review.sample_rate
@@ -129,6 +130,11 @@ class AlignmentReviewWidget(anywidget.AnyWidget):
         track_1, track_2 = self.review.render()
         self.audio_1 = self._audio_data_url(track_1)
         self.audio_2 = self._audio_data_url(track_2)
+        # A trait notification is emitted only when its value changes. Replaying
+        # the same identity at the same second must still replace the browser's
+        # audio source after alignment edits, so make every command distinct.
+        self._render_number += 1
+        command["render_number"] = self._render_number
         self.command = json.dumps(command)
 
     def _handle_message(self, _widget: object, content: object, _buffers: object) -> None:
