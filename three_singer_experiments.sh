@@ -10,6 +10,12 @@
 #   3. Optional: UNMIXX on a manually selected direct-UNMIXX remainder.
 set -Eeuo pipefail
 
+# Colab commonly invokes this file as `bash project/three_singer_experiments.sh`
+# while its current directory is `/content`.  Run all relative paths from the
+# repository containing this script, rather than from the caller's directory.
+REPOSITORY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+cd "$REPOSITORY_DIR"
+
 usage() {
     cat <<'EOF'
 Usage:

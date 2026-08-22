@@ -223,7 +223,9 @@ outputs, so the purpose is to test whether its two outputs form a stable
 one-singer plus two-singer grouping.
 
 In a CUDA Colab runtime, clone or upload this repository, place the song in
-the runtime, then run:
+the runtime, then run. The runner resolves relative paths from its own
+repository directory, so it can be invoked as `bash mss_midi/three_singer_experiments.sh`
+from `/content`:
 
 ```bash
 make prepare
